@@ -41,12 +41,12 @@ npx lathe build --eject       # emit a standalone SKILL.md + mcp-server/
 
 Early. The build order:
 
-— package skeleton, `lathe --help` ✅
-— `lathe check`: parse + validate the manifest ✅
-— `lathe init`: scaffold a new capability
-— `lathe serve`: a generic server that reads the manifest, registers tools, runs locked compute
-— connect to Claude over stdio and run a real flow
-— `lathe build --eject`: standalone SKILL.md + mcp-server/
+- package skeleton, `lathe --help` ✅
+- `lathe check`: parse + validate the manifest ✅
+- `lathe init`: scaffold a new capability
+- `lathe serve`: a generic server that reads the manifest, registers tools, runs locked compute
+- connect to Claude over stdio and run a real flow
+- `lathe build --eject`: standalone SKILL.md + mcp-server/
 
 See [`agent-os/product/`](agent-os/product/) for the mission, roadmap, and tech stack, and
 [`agent-os/standards/`](agent-os/standards/) for the conventions this project is built to.
