@@ -1,0 +1,17 @@
+# Agent OS Standards Index
+
+global:
+  commits:
+    description: Commit message conventions — type-prefixed, present tense, concise subjects
+
+testing:
+  tdd:
+    description: Test-driven development workflow and the vitest build-gate rule
+
+manifest:
+  spec-not-code:
+    description: The capability manifest is declarative and never executes; the declare/defer dial and frozen locked compute
+
+cli:
+  commands:
+    description: How a CLI subcommand is structured — one file per command, logic in libraries, readonly vs confirm semantics
