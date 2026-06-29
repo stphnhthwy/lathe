@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,9 +20,9 @@ interface CliResult {
   stderr: string;
 }
 
-function runCli(args: string[]): Promise<CliResult> {
+function runCli(args: string[], cwd: string = projectRoot): Promise<CliResult> {
   return new Promise((res) => {
-    execFile(process.execPath, [cliPath, ...args], { cwd: projectRoot }, (err, stdout, stderr) => {
+    execFile(process.execPath, [cliPath, ...args], { cwd }, (err, stdout, stderr) => {
       res({ code: err && typeof err.code === "number" ? err.code : 0, stdout, stderr });
     });
   });
@@ -64,5 +64,31 @@ describe("lathe CLI", () => {
     const r = await runCli(["check", "does-not-exist.yaml"]);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain("cannot read");
+  });
+
+  it("init scaffolds a capability and exits 0", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "lathe-cli-init-"));
+    try {
+      const r = await runCli(["init", "demo"], dir);
+      expect(r.code).toBe(0);
+      expect(r.stdout).toContain("created capability");
+      expect(existsSync(join(dir, "demo", "capability.yaml"))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("init refuses to overwrite an existing capability (exit 1)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "lathe-cli-init-"));
+    try {
+      const first = await runCli(["init", "demo"], dir);
+      expect(first.code).toBe(0);
+
+      const second = await runCli(["init", "demo"], dir);
+      expect(second.code).toBe(1);
+      expect(second.stderr).toContain("refusing");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { registerCheck } from "./commands/check.js";
+import { registerInit } from "./commands/init.js";
 
 const program = new Command();
 
@@ -10,6 +11,7 @@ program
   .version("0.0.0");
 
 registerCheck(program);
+registerInit(program);
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(err instanceof Error ? err.message : String(err));

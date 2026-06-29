@@ -9,3 +9,8 @@ export {
   type LoadResult,
   type ManifestIssue,
 } from "./manifest/load.js";
+export {
+  initCapability,
+  type InitOptions,
+  type InitResult,
+} from "./scaffold/init.js";
