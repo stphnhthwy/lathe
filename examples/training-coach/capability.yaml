@@ -1,0 +1,104 @@
+# Capability Manifest — v0.1  (API-first)
+#
+# A capability composes SOURCES (live data you call) and REFERENCES (static
+# knowledge the model reads), adds locked reproducible compute, and emits a
+# SKILL.md + MCP server. The data lives in the sources — capkit owns no store.
+
+capability: training-coach
+version: 0.1.0
+summary: Pull training from Strava, keep it in your own store, and build / check a plan against a coaching methodology.
+
+skill: ./SKILL.md
+
+# ── REFERENCES ──────────────────────────────────────────────────────────────
+# Static knowledge bundled with the skill. The MODEL reads these as context
+# (the Agent Skills `references` pattern). Not called, not live — consulted.
+# Feeds the judgment side of the dial.
+references:
+  - ./methodology.pdf        # the 50k periodization approach the plan must follow
+
+# ── SOURCES ─────────────────────────────────────────────────────────────────
+# Live data you CALL. `http` is primary, `mcp` is its richer sibling, and a
+# local store is only for data with no home yet. Nothing here is "owned" by
+# capkit — Strava owns the activity, your store owns the session row.
+sources:
+  strava:
+    type: http
+    base_url: https://www.strava.com/api/v3
+    auth: { kind: oauth2, token: "${STRAVA_TOKEN}" }    # refresh handled at runtime
+
+  store:                                              # your own data, via PostgREST
+    type: http
+    base_url: ${SUPABASE_URL}/rest/v1                 # local Supabase or hosted
+    auth:    { kind: bearer, token: "${SUPABASE_KEY}" }
+    headers: { apikey: "${SUPABASE_KEY}" }
+
+# ── SCHEMA ──────────────────────────────────────────────────────────────────
+# With API sources, schema is a MAPPING TARGET, not DDL — capkit creates no
+# tables. It's the shape responses get mapped onto and reads come back as.
+schema:
+  session:
+    external_id:  string                 # Strava id — used to dedup imports
+    logged_at:    datetime
+    sport:        enum[run, ride, hiit, strength]
+    duration_min: int
+    rpe:          int                     # not in Strava → supplied (see `ask`)
+    load:         { derived: "duration_min * rpe" }
+  plan_week:
+    week_start:   date
+    phase:        enum[base, build, peak, taper]
+    target_load:  int
+
+metrics:
+  rolling_load: { window: 14d, formula: "sum(session.load)" }
+  acwr:         { formula: "rolling_load(7d) / rolling_load(28d)" }   # ramp signal
+
+behavior:
+  computed_locked: [load, rolling_load, acwr]   # computed in code, returned frozen
+
+# ── TOOLS ───────────────────────────────────────────────────────────────────
+# Two ways to use multiple calls:
+#   (1) a DECLARED PIPELINE — linear, reproducible → you declare it.
+#   (2) ATOMIC tools the MODEL chains — flexible, judgment-led → the skill drives.
+
+tools:
+
+  # (1) DECLARED PIPELINE  —  Strava ──▶ your store. Deterministic, so declared.
+  - name: import_recent
+    description: Pull recent Strava activities and upsert them as sessions.
+    steps:
+      - call: { source: strava, method: GET, path: /athlete/activities, query: { per_page: 10 } }
+        as: activities
+      - for_each: activities                          # linear only — no branching
+        call:
+          source: store
+          method: POST
+          path: /session
+          prefer: resolution=merge-duplicates         # upsert on external_id
+        map:                                          # response ──▶ schema
+          external_id:  $.id
+          logged_at:    $.start_date
+          sport:        $.sport_type                  # coerce → enum
+          duration_min: "$.moving_time / 60"
+          rpe:          ask                           # model/user supplies
+    writes: store.session                             # then runs computed_locked
+
+  # (2) ATOMIC TOOLS  —  the model orchestrates these to "build a plan",
+  #     reading methodology.pdf for the how and using the locked metrics as a
+  #     sanity check. "build_plan" is a SKILL FLOW, not a single tool.
+  - name: get_history
+    description: Recent sessions, newest first.
+    reads:    { source: store, path: /session, query: { order: logged_at.desc, limit: 60 } }
+    readonly: true
+
+  - name: save_plan
+    description: Save a proposed plan (the model builds it from the methodology).
+    writes:   { source: store, path: /plan_week }
+    confirm:  true                                    # write → assistant confirms
+
+  - name: weekly_checkin
+    description: Return this week's locked load metrics vs the plan.
+    reads:    [rolling_load, acwr]
+    readonly: true
+
+emit: [skill, mcp]
