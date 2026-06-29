@@ -15,3 +15,8 @@ npm-debug.log*
 
 # os / editor
 .DS_Store
+
+# claude code — personal/local settings only.
+# Shared tooling (.claude/commands/, .claude/settings.json) stays tracked on purpose.
+.claude/settings.local.json
+
