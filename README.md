@@ -1,7 +1,7 @@
 # lathe
 
 > Turn a small YAML manifest into a working MCP server + Agent Skill. The manifest never
-> executes — lathe reads the declaration and runs real code on your behalf.
+> executes, lathe reads the declaration and runs real code on your behalf.
 
 `lathe` is a tool you bring into a project to build **skills that have structure**. Like
 Prisma (a schema + a CLI that generates real SQL) or a Dockerfile (a spec that Docker turns
@@ -13,9 +13,9 @@ an [Agent Skill](https://docs.claude.com/en/docs/agents-and-tools/agent-skills).
 
 A capability composes two kinds of input:
 
-- **Sources** — live data you *call*: an HTTP API, an MCP server, or your own store. These
+- **Sources** are live data you *call*: an HTTP API, an MCP server, or your own store. These
   feed the **reproducible** side: locked, deterministic compute returned frozen.
-- **References** — static knowledge the model *reads*: a methodology PDF, a docs file.
+- **References** are static knowledge the model *reads*: a methodology PDF, a docs file.
   Bundled with the skill and consulted as context. These feed the **judgment** side.
 
 You declare what must be reproducible and defer what needs judgment. That dial is the whole
@@ -41,12 +41,12 @@ npx lathe build --eject       # emit a standalone SKILL.md + mcp-server/
 
 Early. The build order:
 
-- **M0** — package skeleton, `lathe --help` ✅
-- **M1** — `lathe check`: parse + validate the manifest ✅
-- **M2** — `lathe init`: scaffold a new capability
-- **M3** — `lathe serve`: a generic server that reads the manifest, registers tools, runs locked compute
-- **M4** — connect to Claude over stdio and run a real flow
-- **M5** — `lathe build --eject`: standalone SKILL.md + mcp-server/
+— package skeleton, `lathe --help` ✅
+— `lathe check`: parse + validate the manifest ✅
+— `lathe init`: scaffold a new capability
+— `lathe serve`: a generic server that reads the manifest, registers tools, runs locked compute
+— connect to Claude over stdio and run a real flow
+— `lathe build --eject`: standalone SKILL.md + mcp-server/
 
 See [`agent-os/product/`](agent-os/product/) for the mission, roadmap, and tech stack, and
 [`agent-os/standards/`](agent-os/standards/) for the conventions this project is built to.
