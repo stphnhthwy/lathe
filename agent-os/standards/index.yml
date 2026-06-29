@@ -7,6 +7,8 @@ global:
 testing:
   tdd:
     description: Test-driven development workflow and the vitest build-gate rule
+  packaging:
+    description: Four layers of testing a published package — library, CLI, packaging (pack/publint/attw), and consumer install smoke test
 
 manifest:
   spec-not-code:
