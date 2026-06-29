@@ -17,8 +17,10 @@ standalone code comes last.
 - Faithful *structural* validation. Semantic checks (formula grammar, JSONPath in `map`,
   cross-references between sources/tools) are deferred to a later milestone.
 
-### M2 — `init`
-- `lathe init <name>` — scaffold `capability.yaml`, `SKILL.md`, `references/`, `.env.example`.
+### M2 — `init` ✅
+- `lathe init <name>` — scaffold `capability.yaml`, `SKILL.md`, `references/`, `.env.example`
+  into a new `./<name>/` subdir. The generated manifest is a guided, valid template that
+  passes `lathe check` as-is; refuses to overwrite an existing capability.
 
 ### M3 — `serve` (interpreter)
 - A generic server reads the manifest, registers tools (official MCP SDK, zod input schemas,

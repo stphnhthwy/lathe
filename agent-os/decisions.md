@@ -3,6 +3,23 @@
 A chronological log of significant decisions, newest first. Each entry: the decision, why,
 and any trade-offs accepted.
 
+## 2026-06-29 — `lathe init` scaffolds a subdir with a guided, valid template
+
+**Decision.** `lathe init <name>` creates a new `./<name>/` subdirectory and scaffolds a
+`capability.yaml`, `SKILL.md`, `.env.example`, and `references/README.md` inside it. The
+generated `capability.yaml` is a guided template — a minimal valid core plus commented
+examples of every section — that passes `lathe check` as-is. It refuses to overwrite a
+directory that already holds a `capability.yaml`.
+
+**Why.** A blank file is a poor starting point; a guided-but-valid template teaches the
+manifest shape (the declare/defer dial, quoted `${VAR}` placeholders) while guaranteeing the
+inner loop works from the first `check`. Subdir-only keeps `init` non-destructive and defers
+the riskier `init .` / `--here` cwd-scaffolding to later. Refusing to clobber means re-running
+`init` is always safe.
+
+**Trade-offs.** Templates are inline strings (not files on disk) so they ship via `dist/`
+with no `files` change, at the cost of living in TypeScript rather than as editable fixtures.
+
 ## 2026-06-29 — ESM-only package, accepted
 
 **Decision.** lathe ships as ESM only (`type: module`); no CommonJS build. The `attw`
