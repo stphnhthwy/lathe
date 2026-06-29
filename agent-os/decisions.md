@@ -3,6 +3,13 @@
 A chronological log of significant decisions, newest first. Each entry: the decision, why,
 and any trade-offs accepted.
 
+## 2026-06-29 — ESM-only package, accepted
+
+**Decision.** lathe ships as ESM only (`type: module`); no CommonJS build. The `attw`
+warning that CJS consumers can't `require('@lathe/cli')` (dynamic `import()` only) is an
+accepted trade-off — most consumers use the `lathe` bin, and dual CJS/ESM publishing is
+weight we don't want. Revisit only if a real CJS consumer of the library face appears.
+
 ## 2026-06-29 — npm package name: `@lathe/cli`, binary stays `lathe`
 
 **Decision.** Publish under the scoped name `@lathe/cli`; keep the CLI binary named `lathe`.
