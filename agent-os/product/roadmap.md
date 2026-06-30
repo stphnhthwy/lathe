@@ -26,6 +26,13 @@ standalone code comes last.
 - A generic server reads the manifest, registers tools (official MCP SDK, zod input schemas,
   `confirm`/`readonly` annotations), and runs locked compute. Wire the `http` adapter against
   local PostgREST first — the simplest real API — then point the same adapter at real APIs.
+- Built in three slices:
+  - **Slice 1 — serve + http adapter + atomic tools ✅.** `lathe serve` over stdio; the `http`
+    source adapter (`${...}` env, bearer/oauth2 auth, headers, GET/POST, PostgREST query);
+    atomic `reads`/`writes` tools registered with `readOnlyHint`/`destructiveHint`. Pipeline and
+    metric-reading tools are surfaced as deferred at startup (stderr), not dropped.
+  - **Slice 2 — declared pipelines** (`steps`, `for_each`, `map`/JSONPath, `prefer` upsert).
+  - **Slice 3 — locked compute** (formula grammar + frozen `behavior.computed_locked`).
 
 ### M4 — Connect
 - stdio → Claude. Run a real flow by talking to the capability.
