@@ -14,3 +14,16 @@ export {
   type InitOptions,
   type InitResult,
 } from "./scaffold/init.js";
+export {
+  buildServer,
+  type BuildServerOptions,
+  type BuildResult,
+  type DeferredTool,
+} from "./server/build.js";
+export {
+  request,
+  resolveEnv,
+  buildAuthHeaders,
+  type HttpSource,
+  type RequestOptions,
+} from "./server/http.js";

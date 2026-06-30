@@ -91,4 +91,18 @@ describe("lathe CLI", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("--help lists the serve command", async () => {
+    const r = await runCli(["--help"]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain("serve");
+  });
+
+  it("serve on a missing manifest exits 1 with a read error (no transport)", async () => {
+    // A valid manifest would start a long-lived stdio server; the missing-file
+    // path exits before any transport opens, so it's safe to assert on here.
+    const r = await runCli(["serve", "does-not-exist.yaml"]);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("cannot read");
+  });
 });
