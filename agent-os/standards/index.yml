@@ -3,6 +3,8 @@
 global:
   commits:
     description: Commit message conventions — type-prefixed, present tense, concise subjects
+  publishing:
+    description: How to publish @lathe/cli to npm — one-time org/2FA setup, publish flow, version bumps, prereleases, and unpublish/deprecate rules
 
 testing:
   tdd:
