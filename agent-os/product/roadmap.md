@@ -31,7 +31,9 @@ standalone code comes last.
     source adapter (`${...}` env, bearer/oauth2 auth, headers, GET/POST, PostgREST query);
     atomic `reads`/`writes` tools registered with `readOnlyHint`/`destructiveHint`. Pipeline and
     metric-reading tools are surfaced as deferred at startup (stderr), not dropped.
-  - **Slice 2 — declared pipelines** (`steps`, `for_each`, `map`/JSONPath, `prefer` upsert).
+  - **Slice 2 — declared pipelines ✅.** Linear `steps` (`call` + `as`, `for_each` fan-out),
+    `map` with JSONPath-lite `$.field` + a tiny arithmetic evaluator, `prefer` upsert. `ask`
+    fields become the pipeline tool's input. `import_recent` is now callable.
   - **Slice 3 — locked compute** (formula grammar + frozen `behavior.computed_locked`).
 
 ### M4 — Connect

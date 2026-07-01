@@ -3,6 +3,27 @@
 A chronological log of significant decisions, newest first. Each entry: the decision, why,
 and any trade-offs accepted.
 
+## 2026-06-29 — Declared pipelines are linear-only; `ask` fields are the tool's input (M3 Slice 2)
+
+**Decision.** A tool's `steps` run as a **linear** pipeline: plain `call` steps bind their
+result to a variable via `as`, and a `for_each: <var>` fans out one `call` per item. A step's
+`map` builds each request body from the current item via **JSONPath-lite** (`$.field`, `$.a.b`)
+plus a **tiny arithmetic evaluator** (`+ - * /`, parens) for expressions like `"$.moving_time /
+60"`; `prefer` becomes the PostgREST upsert header. Any `map` value of `ask` is filled from the
+**tool's input arguments**, and those `ask` keys (typed from the write target's schema entity)
+are exactly the pipeline tool's zod input schema.
+
+**Why.** This keeps the reproducible orchestration (fetch → shape → upsert) declared while the
+one genuinely deferred value (`rpe`) is asked of the caller — the declare/defer dial at the
+orchestration level. Linear-only holds the grammar tiny: branching/looping is the signal to
+escape to code or the model, not to grow the pipeline language.
+
+**Trade-offs.** No branching, no conditional steps, no cross-step expression scope beyond `as`
+bindings — by design. The arithmetic evaluator is deliberately minimal (numbers + `$.path`
+terms); richer formulas belong to the Slice 3 locked-compute engine, not to `map`. A single
+`ask` value is applied across every `for_each` item (e.g. one `rpe` for the whole import);
+per-item judgment would be a model-chained tool, not a pipeline.
+
 ## 2026-06-29 — `serve` is a pure `buildServer` + a thin transport; M3 ships in slices
 
 **Decision.** `lathe serve` is split into a **pure** `buildServer(manifest)` (registers tools on
