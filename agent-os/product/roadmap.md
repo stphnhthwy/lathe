@@ -47,8 +47,22 @@ standalone code comes last.
   framed as authoritative. `import_recent` deferred (needs Strava token; covered
   by M3 pipeline tests).
 
-### M5 — `build --eject`
-- Emit a standalone `SKILL.md` + `mcp-server/` that runs without lathe.
+### M5 — `build --eject` — code complete, live smoke pending
+- `lathe build --eject` emits `<out>/{SKILL.md, references/, mcp-server/}`.
+  `mcp-server/` runs with only `@modelcontextprotocol/sdk` + `zod` — no
+  `@lathe/cli` in its `dependencies`, no `yaml` (the manifest ships as a JS
+  literal). Vendored runtime is the same `dist/server/*.js` `lathe serve`
+  runs, so the ejected server serves the interpreter's `tools/list`
+  byte-for-byte.
+- **Proven:** unit + in-process integration tests; CLI smoke on
+  `examples/training-coach/` (all four tools registered, `initialize` +
+  `tools/list` round-trip over stdio); `npm pack --dry-run` ships only the
+  intended 10 files; pack-and-install into a scratch consumer runs via the
+  bin with `@lathe/cli` absent from `node_modules`.
+- **Pending:** live Claude Desktop smoke against local PostgREST with
+  `@lathe/cli` uninstalled globally (mirrors M4's smoke path). Placeholder
+  in `agent-os/specs/2026-07-01-1217-m5-build-eject/references.md`. Flip
+  M5 to ✅ once that trace lands.
 
 ## Phase 2: Post-Launch
 - Richer source adapters (OAuth/refresh for real APIs like Strava/Shopify).

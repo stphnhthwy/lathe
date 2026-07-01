@@ -75,6 +75,34 @@ the model will call it.
 If tools don't show up, run `lathe serve /absolute/path/to/capability.yaml` directly in a
 terminal — the startup banner and any manifest errors print to stderr.
 
+## Eject a standalone capability
+
+Once a capability works under `lathe serve`, you can eject it into a distributable package
+that runs without `@lathe/cli` on the wire:
+
+```bash
+npx lathe build --eject examples/training-coach/capability.yaml --out ./training-coach
+```
+
+You get a tree like:
+
+```
+training-coach/
+├── SKILL.md
+├── references/
+└── mcp-server/
+    ├── package.json          # deps: @modelcontextprotocol/sdk + zod only
+    ├── README.md             # copy-pasteable claude_desktop_config.json snippet
+    └── dist/
+        ├── main.js           # buildServer + stdio
+        ├── manifest.js       # the manifest as a JS literal
+        └── server/*.js       # vendored runtime — same code lathe serve runs
+```
+
+`cd training-coach/mcp-server && npm install && node ./dist/main.js` starts the same MCP
+server, and the `claude_desktop_config.json` snippet in the emitted `README.md` uses
+`command: "node"` (no `npx @lathe/cli`) — the ejected bundle is the deliverable.
+
 ## Status
 
 Early. The build order:
@@ -84,7 +112,7 @@ Early. The build order:
 - `lathe init`: scaffold a new capability ✅
 - `lathe serve`: a generic server that reads the manifest, registers tools, runs locked compute ✅
 - connect to Claude over stdio and run a real flow ✅
-- `lathe build --eject`: standalone SKILL.md + mcp-server/
+- `lathe build --eject`: standalone SKILL.md + mcp-server/ — code complete, live smoke pending
 
 See [`agent-os/product/`](agent-os/product/) for the mission, roadmap, and tech stack, and
 [`agent-os/standards/`](agent-os/standards/) for the conventions this project is built to.
