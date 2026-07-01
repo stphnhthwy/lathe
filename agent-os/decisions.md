@@ -3,6 +3,42 @@
 A chronological log of significant decisions, newest first. Each entry: the decision, why,
 and any trade-offs accepted.
 
+## 2026-07-01 — Ejection vendors the interpreter and hardcodes the manifest, not per-tool codegen
+
+**Decision.** `lathe build --eject` emits a standalone `mcp-server/` by (1)
+copying lathe's own pre-built `dist/server/*.js` 1:1 into the ejected
+`mcp-server/dist/server/`, (2) writing `dist/manifest.js` as a JS literal
+(`export const manifest = {...}`), and (3) writing a tiny `dist/main.js` that
+imports the vendored `buildServer` + the hardcoded manifest and connects
+`StdioServerTransport`. The ejected `package.json` has no `@lathe/cli`, no
+`yaml`, no `commander` — only `@modelcontextprotocol/sdk` + `zod`. Slice 2
+copies `manifest.skill` (default `./SKILL.md`) to `<out>/SKILL.md` and each
+`manifest.references[]` to `<out>/references/`, and emits `mcp-server/README.md`
+with a `claude_desktop_config.json` snippet using `command: "node"` +
+`args: ["<abs>/dist/main.js"]`.
+
+**Why.** The interpreter modules (`http.ts`, `pipeline.ts`, `formula.ts`,
+`tools.ts`, `build.ts`) are already the code you'd write by hand for a custom
+MCP server. Generating specialized per-tool handlers would duplicate all of
+this logic and open a divergence gap between interpreter and ejection.
+Vendoring is deterministic (same manifest → same emit), honest (the ejected
+runtime is literally the interpreter, snapshotted), and cheap — Slice 1 is
+just three small template files plus a copy. Type-only imports in
+`src/server/build.ts` are erased by `tsc`, so `dist/server/*.js` has zero
+cross-directory imports; the 1:1 copy needs no path rewriting.
+
+**Trade-offs.** The ejected bundle carries roughly 300 lines of vendored
+runtime the user could otherwise skip — an obvious future bundling
+optimization (esbuild single-file) but not the M5 shape. Vendored code
+drifts by design: once ejected, the bundle is frozen against lathe's
+`dist/server/` at eject time, and later interpreter changes do not reach
+out and modify their distributable. The `capability.yaml` isn't shipped in
+the emitted tree because the manifest is already baked into `manifest.js`
+as executable JS; users who want the original YAML for reference can
+include their own. Missing references (e.g. training-coach's declared
+`methodology.pdf`) surface as `warnings` on the eject result rather than
+failing the eject — the ejection still produces a runnable server.
+
 ## 2026-07-01 — M4 is docs + live smoke, no new interpreter surface
 
 **Decision.** M4 ships as a `Connect to Claude Desktop` section in `README.md` (config
