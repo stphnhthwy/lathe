@@ -39,8 +39,13 @@ standalone code comes last.
     tools fetch their entity's rows via its declared read source and return `computed_locked`
     values **frozen**. `weekly_checkin` is now callable.
 
-### M4 — Connect
+### M4 — Connect ✅
 - stdio → Claude. Run a real flow by talking to the capability.
+- Shipped: `claude_desktop_config.json` docs in `README.md` + live smoke of the
+  training-coach example against local PostgREST — `get_history` returned rows
+  from PostgREST; `weekly_checkin` returned locked metrics (`rolling_load`, `acwr`)
+  framed as authoritative. `import_recent` deferred (needs Strava token; covered
+  by M3 pipeline tests).
 
 ### M5 — `build --eject`
 - Emit a standalone `SKILL.md` + `mcp-server/` that runs without lathe.
