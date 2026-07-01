@@ -3,6 +3,73 @@
 A chronological log of significant decisions, newest first. Each entry: the decision, why,
 and any trade-offs accepted.
 
+## 2026-06-29 — Locked compute: a tiny formula engine, rows via the entity's read source (M3 Slice 3)
+
+**Decision.** `behavior.computed_locked` is computed by a small formula engine
+(`src/server/formula.ts`) and returned **frozen** — the tool result carries `computed_locked:
+true`, the metric values, and a note telling the model to reason about them and not recompute.
+The grammar is intentionally tiny: arithmetic `+ - * /`, derived fields over one row
+(`duration_min * rpe`), aggregates `sum/avg/min/max/last(entity.field)`, `Nd` windows, and
+metric-with-window calls (`rolling_load(7d)`) composed into ratios (`acwr`). A metric-reading
+tool fetches its entity's rows from **the source a `readonly` atomic tool already declares for
+that entity** (e.g. `session` → `get_history`'s `store /session`); `now` is injected so window
+math is reproducible/testable.
+
+**Why.** Frozen locked compute is the product's core guardrail — the reproducible side of the
+dial. Deriving the row source from an existing read tool avoids inventing new manifest syntax to
+bind a metric to a source (the manifest already says where `session` is read). Injecting `now`
+keeps the engine pure and unit-testable to exact values.
+
+**Trade-offs.** The grammar stays deliberately small — no branching, no custom functions, one
+window unit (`Nd`); richer needs escape to code, not grammar growth. Metric row fetches pull the
+entity's full read path (no windowed server-side filter yet), so very large stores fetch more
+than a window needs — fine at M3 scale, an optimization later. An empty window yields 0 (keeps
+sums/ratios clean) rather than an error. This completes M3: every tool in the example capability
+is callable.
+
+## 2026-06-29 — Declared pipelines are linear-only; `ask` fields are the tool's input (M3 Slice 2)
+
+**Decision.** A tool's `steps` run as a **linear** pipeline: plain `call` steps bind their
+result to a variable via `as`, and a `for_each: <var>` fans out one `call` per item. A step's
+`map` builds each request body from the current item via **JSONPath-lite** (`$.field`, `$.a.b`)
+plus a **tiny arithmetic evaluator** (`+ - * /`, parens) for expressions like `"$.moving_time /
+60"`; `prefer` becomes the PostgREST upsert header. Any `map` value of `ask` is filled from the
+**tool's input arguments**, and those `ask` keys (typed from the write target's schema entity)
+are exactly the pipeline tool's zod input schema.
+
+**Why.** This keeps the reproducible orchestration (fetch → shape → upsert) declared while the
+one genuinely deferred value (`rpe`) is asked of the caller — the declare/defer dial at the
+orchestration level. Linear-only holds the grammar tiny: branching/looping is the signal to
+escape to code or the model, not to grow the pipeline language.
+
+**Trade-offs.** No branching, no conditional steps, no cross-step expression scope beyond `as`
+bindings — by design. The arithmetic evaluator is deliberately minimal (numbers + `$.path`
+terms); richer formulas belong to the Slice 3 locked-compute engine, not to `map`. A single
+`ask` value is applied across every `for_each` item (e.g. one `rpe` for the whole import);
+per-item judgment would be a model-chained tool, not a pipeline.
+
+## 2026-06-29 — `serve` is a pure `buildServer` + a thin transport; M3 ships in slices
+
+**Decision.** `lathe serve` is split into a **pure** `buildServer(manifest)` (registers tools on
+an `McpServer`, opens no transport, does no I/O) and a thin command that connects a
+`StdioServerTransport`. M3 itself ships in three slices — (1) serve + `http` adapter + atomic
+`reads`/`writes` tools, (2) declared pipelines, (3) locked-compute formula engine — all before
+M4. Slice 1 is done.
+
+**Why.** A pure builder is testable through an in-memory client/server pair
+(`InMemoryTransport` + `Client`) with no subprocess, so the whole tool surface is exercised in
+fast unit tests. Slicing keeps each PR a real end-to-end loop (edit → serve → call a tool
+against PostgREST) instead of one giant interpreter drop.
+
+**Trade-offs / rules.**
+- **stdout is reserved for the MCP protocol.** All diagnostics — banner, errors, and the
+  deferred-tool notice — go to **stderr**; a stray `console.log` would corrupt the stream.
+- **Deferred tools are surfaced, not dropped.** A pipeline (`steps`) or metric-reads tool isn't
+  registered yet, but `serve` lists it as deferred at startup so the served surface stays honest.
+- **`http` only, no OAuth refresh in M3.** `oauth2` sources are treated as an already-valid
+  bearer token; `mcp`/`postgres`/`sqlite` adapters and refresh are later.
+- Automated tests use an in-process mock HTTP server (CI-safe); live PostgREST is a manual smoke.
+
 ## 2026-06-29 — `lathe init` scaffolds a subdir with a guided, valid template
 
 **Decision.** `lathe init <name>` creates a new `./<name>/` subdirectory and scaffolds a

@@ -22,10 +22,22 @@ standalone code comes last.
   into a new `./<name>/` subdir. The generated manifest is a guided, valid template that
   passes `lathe check` as-is; refuses to overwrite an existing capability.
 
-### M3 — `serve` (interpreter)
+### M3 — `serve` (interpreter) ✅
 - A generic server reads the manifest, registers tools (official MCP SDK, zod input schemas,
   `confirm`/`readonly` annotations), and runs locked compute. Wire the `http` adapter against
   local PostgREST first — the simplest real API — then point the same adapter at real APIs.
+- Built in three slices (all done — every tool in the example capability is callable):
+  - **Slice 1 — serve + http adapter + atomic tools ✅.** `lathe serve` over stdio; the `http`
+    source adapter (`${...}` env, bearer/oauth2 auth, headers, GET/POST, PostgREST query);
+    atomic `reads`/`writes` tools registered with `readOnlyHint`/`destructiveHint`. Pipeline and
+    metric-reading tools are surfaced as deferred at startup (stderr), not dropped.
+  - **Slice 2 — declared pipelines ✅.** Linear `steps` (`call` + `as`, `for_each` fan-out),
+    `map` with JSONPath-lite `$.field` + a tiny arithmetic evaluator, `prefer` upsert. `ask`
+    fields become the pipeline tool's input. `import_recent` is now callable.
+  - **Slice 3 — locked compute ✅.** A tiny formula engine (derived fields, `sum/avg/min/max/
+    last`, `Nd` windows, metric funcs like `rolling_load(7d)`, ratios like `acwr`). Metric-reading
+    tools fetch their entity's rows via its declared read source and return `computed_locked`
+    values **frozen**. `weekly_checkin` is now callable.
 
 ### M4 — Connect
 - stdio → Claude. Run a real flow by talking to the capability.
