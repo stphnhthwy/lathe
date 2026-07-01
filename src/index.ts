@@ -27,3 +27,15 @@ export {
   type HttpSource,
   type RequestOptions,
 } from "./server/http.js";
+export {
+  executePipeline,
+  type PipelineStep,
+  type PipelineResult,
+} from "./server/pipeline.js";
+export {
+  evaluateMetric,
+  computeDerivedField,
+  entitiesForMetrics,
+  type MetricDef,
+  type MetricEngine,
+} from "./server/formula.js";

@@ -59,7 +59,8 @@ beforeAll(async () => {
     last = { method: req.method, url: req.url, body: await readBody(req) };
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json");
-    res.end('[{"id":1,"sport":"run"}]');
+    // Row carries id/sport (for read + pipeline tests) plus logged_at/load (for metrics).
+    res.end('[{"id":1,"sport":"run","logged_at":"2026-06-28T10:00:00Z","load":300}]');
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const addr = server.address();
@@ -81,9 +82,21 @@ function testManifest(): Manifest {
       },
     },
     schema: {
-      session: { external_id: "string", sport: "enum[run, ride]", rpe: "int" },
+      session: {
+        external_id: "string",
+        logged_at: "datetime",
+        sport: "enum[run, ride]",
+        duration_min: "int",
+        rpe: "int",
+        load: { derived: "duration_min * rpe" },
+      },
       plan_week: { week_start: "date", phase: "enum[base, build, peak, taper]", target_load: "int" },
     },
+    metrics: {
+      rolling_load: { window: "14d", formula: "sum(session.load)" },
+      acwr: { formula: "rolling_load(7d) / rolling_load(28d)" },
+    },
+    behavior: { computed_locked: ["load", "rolling_load", "acwr"] },
     tools: [
       { name: "get_history", description: "recent sessions", reads: { source: "store", path: "/session", query: { limit: 5 } }, readonly: true },
       { name: "save_plan", description: "save a plan", writes: { source: "store", path: "/plan_week" }, confirm: true },
@@ -105,8 +118,8 @@ function testManifest(): Manifest {
   } as unknown as Manifest;
 }
 
-async function connectedClient() {
-  const result = buildServer(testManifest(), { env: { K: "secret" }, log: () => {} });
+async function connectedClient(extra: Record<string, unknown> = {}) {
+  const result = buildServer(testManifest(), { env: { K: "secret" }, log: () => {}, ...extra });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await result.server.connect(serverTransport);
   const client = new Client({ name: "test-client", version: "0.0.0" });
@@ -115,10 +128,10 @@ async function connectedClient() {
 }
 
 describe("buildServer", () => {
-  it("registers atomic + pipeline tools and defers the metric tool", () => {
+  it("registers every tool in the example (nothing deferred) once metrics land", () => {
     const result = buildServer(testManifest(), { env: { K: "secret" }, log: () => {} });
-    expect(result.registered.sort()).toEqual(["get_history", "import_recent", "save_plan"]);
-    expect(result.deferred.map((d) => d.name).sort()).toEqual(["weekly_checkin"]);
+    expect(result.registered.sort()).toEqual(["get_history", "import_recent", "save_plan", "weekly_checkin"]);
+    expect(result.deferred).toEqual([]);
   });
 
   it("lists the executable tools with read/write annotations", async () => {
@@ -126,7 +139,13 @@ describe("buildServer", () => {
     const { tools } = await client.listTools();
     const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
 
-    expect(Object.keys(byName).sort()).toEqual(["get_history", "import_recent", "save_plan"]);
+    expect(Object.keys(byName).sort()).toEqual([
+      "get_history",
+      "import_recent",
+      "save_plan",
+      "weekly_checkin",
+    ]);
+    expect(byName["weekly_checkin"].annotations?.readOnlyHint).toBe(true);
     expect(byName["get_history"].annotations?.readOnlyHint).toBe(true);
     expect(byName["save_plan"].annotations?.readOnlyHint).toBe(false);
     expect(byName["save_plan"].annotations?.destructiveHint).toBe(true);
@@ -168,5 +187,20 @@ describe("buildServer", () => {
     expect(last.method).toBe("POST"); // last request is the /session upsert
     expect(last.url).toBe("/session");
     expect(JSON.parse(last.body)).toEqual({ external_id: 1, sport: "run", rpe: 5 });
+  });
+
+  it("computes locked metrics and returns them frozen (weekly_checkin)", async () => {
+    // Fixed now so the single mock row (2026-06-28, load 300) is inside all windows.
+    const { client } = await connectedClient({ now: new Date("2026-07-01T00:00:00Z") });
+    const res = await client.callTool({ name: "weekly_checkin", arguments: {} });
+    const content = res.content as Array<{ type: string; text: string }>;
+    const payload = JSON.parse(content[0].text);
+
+    expect(payload.computed_locked).toBe(true);
+    expect(payload.metrics.rolling_load).toBe(300); // sum(load) over 14d
+    expect(payload.metrics.acwr).toBeCloseTo(1, 10); // 300 / 300
+    expect(payload.note).toMatch(/do not recompute/i);
+    expect(last.method).toBe("GET"); // rows fetched via the entity's read source
+    expect(last.url).toBe("/session");
   });
 });
