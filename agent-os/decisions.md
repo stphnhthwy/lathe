@@ -3,6 +3,30 @@
 A chronological log of significant decisions, newest first. Each entry: the decision, why,
 and any trade-offs accepted.
 
+## 2026-06-29 — Locked compute: a tiny formula engine, rows via the entity's read source (M3 Slice 3)
+
+**Decision.** `behavior.computed_locked` is computed by a small formula engine
+(`src/server/formula.ts`) and returned **frozen** — the tool result carries `computed_locked:
+true`, the metric values, and a note telling the model to reason about them and not recompute.
+The grammar is intentionally tiny: arithmetic `+ - * /`, derived fields over one row
+(`duration_min * rpe`), aggregates `sum/avg/min/max/last(entity.field)`, `Nd` windows, and
+metric-with-window calls (`rolling_load(7d)`) composed into ratios (`acwr`). A metric-reading
+tool fetches its entity's rows from **the source a `readonly` atomic tool already declares for
+that entity** (e.g. `session` → `get_history`'s `store /session`); `now` is injected so window
+math is reproducible/testable.
+
+**Why.** Frozen locked compute is the product's core guardrail — the reproducible side of the
+dial. Deriving the row source from an existing read tool avoids inventing new manifest syntax to
+bind a metric to a source (the manifest already says where `session` is read). Injecting `now`
+keeps the engine pure and unit-testable to exact values.
+
+**Trade-offs.** The grammar stays deliberately small — no branching, no custom functions, one
+window unit (`Nd`); richer needs escape to code, not grammar growth. Metric row fetches pull the
+entity's full read path (no windowed server-side filter yet), so very large stores fetch more
+than a window needs — fine at M3 scale, an optimization later. An empty window yields 0 (keeps
+sums/ratios clean) rather than an error. This completes M3: every tool in the example capability
+is callable.
+
 ## 2026-06-29 — Declared pipelines are linear-only; `ask` fields are the tool's input (M3 Slice 2)
 
 **Decision.** A tool's `steps` run as a **linear** pipeline: plain `call` steps bind their
