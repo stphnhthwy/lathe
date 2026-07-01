@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import { registerBuild } from "./commands/build.js";
 import { registerCheck } from "./commands/check.js";
 import { registerInit } from "./commands/init.js";
 import { registerServe } from "./commands/serve.js";
@@ -14,6 +15,7 @@ program
 registerCheck(program);
 registerInit(program);
 registerServe(program);
+registerBuild(program);
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(err instanceof Error ? err.message : String(err));
