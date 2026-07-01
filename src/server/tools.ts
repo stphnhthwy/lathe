@@ -1,19 +1,23 @@
-import type { ZodRawShape } from "zod";
+import { z, type ZodRawShape } from "zod";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { request, type HttpSource } from "./http.js";
 import { entityInputShape } from "./schema-to-zod.js";
+import { executePipeline, type PipelineStep } from "./pipeline.js";
 
 /**
- * Classify a manifest tool and, when it's executable in this slice, turn it into
- * an MCP tool registration (config + handler).
+ * Classify a manifest tool and, when it's executable, turn it into an MCP tool
+ * registration (config + handler).
  *
- * M3 Slice 1 executes ATOMIC tools only — a single `reads` (GET) or `writes`
- * (POST) against an `http` source. Two shapes are recognized but DEFERRED to
- * later slices, and surfaced (not dropped) at startup:
- *   - `pipeline` — a tool with `steps` (declared pipeline → Slice 2).
- *   - `metric`   — a tool whose `reads` is an array of metric names, which need
- *                  the locked-compute formula engine (→ Slice 3).
+ * Executable so far:
+ *   - `atomic-read`/`atomic-write` — a single `reads` (GET) or `writes` (POST)
+ *     against an `http` source (Slice 1).
+ *   - `pipeline` — a tool with linear `steps` (declared pipeline; Slice 2). Its
+ *     input schema is the `ask` fields the pipeline needs the caller to supply.
+ *
+ * Still DEFERRED (recognized, surfaced at startup, not dropped):
+ *   - `metric` — a tool whose `reads` is an array of metric names, which needs
+ *     the locked-compute formula engine (→ Slice 3).
  */
 
 export type ToolKind = "atomic-read" | "atomic-write" | "pipeline" | "metric" | "unsupported";
@@ -70,6 +74,31 @@ const text = (value: unknown): CallToolResult => ({
 });
 
 /**
+ * A pipeline's input schema is exactly the `ask` fields its `map` steps need the
+ * caller to supply. Each `ask` key is typed from the write target's schema entity
+ * when known (e.g. `rpe` → int from `schema.session`), else left permissive.
+ */
+function pipelineInputShape(
+  steps: PipelineStep[],
+  schema: Record<string, Record<string, unknown>>,
+): ZodRawShape {
+  const askKeys = new Set<string>();
+  let writeEntity: Record<string, unknown> = {};
+  for (const step of steps) {
+    if (step.call && step.for_each !== undefined) {
+      writeEntity = schema[entityFromPath(step.call.path)] ?? writeEntity;
+    }
+    for (const [key, spec] of Object.entries(step.map ?? {})) {
+      if (spec === "ask") askKeys.add(key);
+    }
+  }
+  const entityShape = entityInputShape(writeEntity);
+  const shape: ZodRawShape = {};
+  for (const key of askKeys) shape[key] = entityShape[key] ?? z.any();
+  return shape;
+}
+
+/**
  * Turn a tool into a registration, or return why it's deferred. `kind` is passed
  * in so the caller (which already classified for its startup notice) doesn't
  * re-derive it.
@@ -79,9 +108,29 @@ export function toRegistration(
   kind: ToolKind,
   ctx: BuildContext,
 ): ToolRegistration | { deferred: string } {
-  if (kind === "pipeline") return { deferred: "declared pipeline (steps) — Slice 2" };
   if (kind === "metric") return { deferred: "reads locked metrics — Slice 3" };
   if (kind === "unsupported") return { deferred: "unrecognized tool shape" };
+
+  if (kind === "pipeline") {
+    const steps = (tool.steps ?? []) as PipelineStep[];
+    return {
+      name: tool.name,
+      config: {
+        description: tool.description,
+        inputSchema: pipelineInputShape(steps, ctx.schema),
+        annotations: { readOnlyHint: false, destructiveHint: true }, // pipelines write
+      },
+      handler: async (args) =>
+        text(
+          await executePipeline(steps, {
+            sources: ctx.sources,
+            args,
+            env: ctx.env,
+            fetchImpl: ctx.fetchImpl,
+          }),
+        ),
+    };
+  }
 
   const spec = (kind === "atomic-read" ? tool.reads : tool.writes) as {
     source: string;

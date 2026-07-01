@@ -81,12 +81,25 @@ function testManifest(): Manifest {
       },
     },
     schema: {
+      session: { external_id: "string", sport: "enum[run, ride]", rpe: "int" },
       plan_week: { week_start: "date", phase: "enum[base, build, peak, taper]", target_load: "int" },
     },
     tools: [
       { name: "get_history", description: "recent sessions", reads: { source: "store", path: "/session", query: { limit: 5 } }, readonly: true },
       { name: "save_plan", description: "save a plan", writes: { source: "store", path: "/plan_week" }, confirm: true },
-      { name: "import_recent", description: "pipeline", steps: [{ call: {} }], writes: "store.session" },
+      {
+        name: "import_recent",
+        description: "pipeline",
+        steps: [
+          { call: { source: "store", method: "GET", path: "/activities" }, as: "activities" },
+          {
+            for_each: "activities",
+            call: { source: "store", method: "POST", path: "/session", prefer: "resolution=merge-duplicates" },
+            map: { external_id: "$.id", sport: "$.sport", rpe: "ask" },
+          },
+        ],
+        writes: "store.session",
+      },
       { name: "weekly_checkin", description: "metrics", reads: ["rolling_load", "acwr"], readonly: true },
     ],
   } as unknown as Manifest;
@@ -102,18 +115,18 @@ async function connectedClient() {
 }
 
 describe("buildServer", () => {
-  it("registers atomic tools and defers pipeline + metric tools", () => {
+  it("registers atomic + pipeline tools and defers the metric tool", () => {
     const result = buildServer(testManifest(), { env: { K: "secret" }, log: () => {} });
-    expect(result.registered.sort()).toEqual(["get_history", "save_plan"]);
-    expect(result.deferred.map((d) => d.name).sort()).toEqual(["import_recent", "weekly_checkin"]);
+    expect(result.registered.sort()).toEqual(["get_history", "import_recent", "save_plan"]);
+    expect(result.deferred.map((d) => d.name).sort()).toEqual(["weekly_checkin"]);
   });
 
-  it("lists only the atomic tools, with read/write annotations", async () => {
+  it("lists the executable tools with read/write annotations", async () => {
     const { client } = await connectedClient();
     const { tools } = await client.listTools();
     const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
 
-    expect(Object.keys(byName).sort()).toEqual(["get_history", "save_plan"]);
+    expect(Object.keys(byName).sort()).toEqual(["get_history", "import_recent", "save_plan"]);
     expect(byName["get_history"].annotations?.readOnlyHint).toBe(true);
     expect(byName["save_plan"].annotations?.readOnlyHint).toBe(false);
     expect(byName["save_plan"].annotations?.destructiveHint).toBe(true);
@@ -122,6 +135,9 @@ describe("buildServer", () => {
       "target_load",
       "week_start",
     ]);
+    // import_recent's input is exactly its `ask` field (rpe), typed from schema.session.
+    expect(byName["import_recent"].annotations?.readOnlyHint).toBe(false);
+    expect(Object.keys(byName["import_recent"].inputSchema.properties ?? {})).toEqual(["rpe"]);
   });
 
   it("calls the http adapter on an atomic read and returns the payload", async () => {
@@ -141,5 +157,16 @@ describe("buildServer", () => {
     });
     expect(last.method).toBe("POST");
     expect(JSON.parse(last.body)).toEqual({ week_start: "2026-07-01", phase: "base", target_load: 300 });
+  });
+
+  it("runs a declared pipeline on callTool (GET → for_each upsert)", async () => {
+    const { client } = await connectedClient();
+    const res = await client.callTool({ name: "import_recent", arguments: { rpe: 5 } });
+    const content = res.content as Array<{ type: string; text: string }>;
+    // Mock returns one activity for the GET; the for_each upserts it once.
+    expect(JSON.parse(content[0].text)).toEqual({ steps: 2, reads: 1, writes: 1 });
+    expect(last.method).toBe("POST"); // last request is the /session upsert
+    expect(last.url).toBe("/session");
+    expect(JSON.parse(last.body)).toEqual({ external_id: 1, sport: "run", rpe: 5 });
   });
 });
