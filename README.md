@@ -37,6 +37,44 @@ npx lathe build --eject       # emit a standalone SKILL.md + mcp-server/
 > Claude**. Your server is a passive provider — it never calls the model; the model decides
 > when to call your tools.
 
+## Connect to Claude Desktop
+
+`lathe serve` is a stdio MCP server, so any client that can launch a subprocess can talk to
+your capability. To wire it into [Claude Desktop](https://claude.ai/download), add an entry
+to `claude_desktop_config.json`:
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "training-coach": {
+      "command": "npx",
+      "args": ["-y", "@lathe/cli", "serve", "/absolute/path/to/capability.yaml"],
+      "env": {
+        "SUPABASE_URL": "https://your-project.supabase.co",
+        "SUPABASE_KEY": "sb_secret_..."
+      }
+    }
+  }
+}
+```
+
+Two things to know:
+
+- **Use an absolute path** to `capability.yaml`. Claude Desktop's working directory isn't
+  your project.
+- **Set secrets in the `env:` block**, not a `.env` file. The subprocess Claude Desktop
+  spawns does not inherit your shell.
+
+Restart Claude Desktop. The tools icon in the composer will show your capability
+(e.g. `training-coach`) with its tools listed; ask a question that maps to one of them and
+the model will call it.
+
+If tools don't show up, run `lathe serve /absolute/path/to/capability.yaml` directly in a
+terminal — the startup banner and any manifest errors print to stderr.
+
 ## Status
 
 Early. The build order:
@@ -44,8 +82,8 @@ Early. The build order:
 - package skeleton, `lathe --help` ✅
 - `lathe check`: parse + validate the manifest ✅
 - `lathe init`: scaffold a new capability ✅
-- `lathe serve`: a generic server that reads the manifest, registers tools, runs locked compute
-- connect to Claude over stdio and run a real flow
+- `lathe serve`: a generic server that reads the manifest, registers tools, runs locked compute ✅
+- connect to Claude over stdio and run a real flow ✅
 - `lathe build --eject`: standalone SKILL.md + mcp-server/
 
 See [`agent-os/product/`](agent-os/product/) for the mission, roadmap, and tech stack, and

@@ -3,6 +3,35 @@
 A chronological log of significant decisions, newest first. Each entry: the decision, why,
 and any trade-offs accepted.
 
+## 2026-07-01 — M4 is docs + live smoke, no new interpreter surface
+
+**Decision.** M4 ships as a `Connect to Claude Desktop` section in `README.md` (config
+path, copy-pasteable `claude_desktop_config.json` snippet, `env:` block caveat,
+absolute-path caveat, hammer-icon verification, stderr troubleshooting one-liner)
+plus a **live end-to-end smoke** of `examples/training-coach/` against local
+PostgREST, run through Claude Desktop. No changes under `src/`. Trace captured in
+`agent-os/specs/2026-07-01-1200-m4-connect/references.md`: `get_history` round-trips
+through the http adapter; `weekly_checkin` returns
+`{ computed_locked: true, metrics: { rolling_load, acwr }, note: ... }` — the M3
+Slice 3 locked-compute framing survives through the Claude conversation.
+
+**Why.** The whole point of the M3 slicing was to make M4 a paste-and-verify step.
+`lathe serve` already reads a manifest, registers every executable tool on the MCP
+SDK, and connects `StdioServerTransport`; Claude Desktop's MCP client already knows
+how to launch a stdio subprocess and route `tools/list` / `tools/call`. Nothing
+lathe-side needs to run for the loop to close — the docs *are* the milestone.
+Verifying against the same local Supabase/PostgREST used in the M3 smoke keeps the
+wire path identical, so a green M4 smoke really is a green M4.
+
+**Trade-offs.** No `lathe serve --print-config` and no `lathe connect` command, so
+users hand-edit `claude_desktop_config.json` and paste absolute paths — accepted
+until we see friction. Only Claude Desktop is documented; Claude Code / Cursor /
+other clients wait for a real reason to add them. The `import_recent` tool wasn't
+exercised in the smoke because it needs a Strava token; the M3 pipeline tests
+already cover its behavior, so the M4 acceptance leans on `get_history` +
+`weekly_checkin` (frozen locked compute is the invariant M4 had to prove survives
+the client hop, and it does).
+
 ## 2026-06-29 — Locked compute: a tiny formula engine, rows via the entity's read source (M3 Slice 3)
 
 **Decision.** `behavior.computed_locked` is computed by a small formula engine
