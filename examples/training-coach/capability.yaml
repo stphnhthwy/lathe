@@ -40,7 +40,7 @@ schema:
   session:
     external_id:  string                 # Strava id — used to dedup imports
     logged_at:    datetime
-    sport:        enum[run, ride, hiit, strength]
+    sport:        string               # source-owned vocabulary — Strava's sport_type passes through verbatim
     duration_min: int
     rpe:          int                     # not in Strava → supplied (see `ask`)
     load:         { derived: "duration_min * rpe" }
@@ -78,7 +78,7 @@ tools:
         map:                                          # response ──▶ schema
           external_id:  $.id
           logged_at:    $.start_date
-          sport:        $.sport_type                  # coerce → enum
+          sport:        $.sport_type                  # passthrough — the model classifies at read time
           duration_min: "$.moving_time / 60"
           rpe:          ask                           # model/user supplies
     writes: store.session                             # then runs computed_locked

@@ -3,6 +3,46 @@
 A chronological log of significant decisions, newest first. Each entry: the decision, why,
 and any trade-offs accepted.
 
+## 2026-07-18 — Import semantics from real data: coerce mechanically, skip-and-report, pass through source vocabularies
+
+**Decision.** Three related contract decisions, all forced by running `import_recent`
+against real Strava data during the M5 smoke:
+
+1. **The map step coerces resolved bodies toward the write entity's declared schema
+   types** — `int` rounds (`moving_time / 60` → 56.1 → 56), `enum[...]` case-folds onto
+   a declared value (`"Run"` → `run`). Only mechanical normalizations; anything needing
+   judgment stays `ask`. This implements the `coerce` leg of the declare/coerce/ask dial
+   the manifest always promised.
+2. **A `for_each` row the source rejects is skipped and reported, never fatal.** The
+   pipeline result carries `skipped: [{reason}]` alongside `writes`, so the model can
+   relay "8 imported, 2 skipped" — while step-level failures (bad auth, unreachable
+   source, unbound list) still abort the pipeline.
+3. **Source-owned vocabularies pass through; declare enums only for vocabularies the
+   capability owns.** Strava's `sport_type` (~50 values Strava controls, e.g.
+   `HighIntensityIntervalTraining`, `Yoga`) cannot honestly be projected onto
+   `enum[run, ride, hiit, strength]` at write time — and for this capability the enum
+   bought nothing: no locked metric filters by sport (`load` is `duration_min * rpe`
+   regardless). `session.sport` is now `string` (the example's DB check constraint is
+   dropped in the stack repo, migration `20260718001500`); `plan_week.phase` keeps its
+   enum because *base/build/peak/taper* is the capability's own model. Classification
+   judgment ("does yoga count toward the plan?") happens at read time — the model plus
+   `methodology.pdf`, the judgment side of the dial.
+
+**Why.** Real data is the spec check. The first import attempt failed three different
+ways (float into int column, case mismatch, batch abort on one Yoga row), and each fix
+had to choose semantics. The through-line: reproducible-side machinery must be
+mechanical and total (coerce what has one right answer, report what it can't do),
+and vocabulary projection is not mechanical — it's either the author's declaration or
+the model's judgment, never a silent write-time guess.
+
+**Trade-offs.** A declared value map (`values: {HighIntensityIntervalTraining: hiit}`)
+was considered and **deferred** — it's the honest bridge if a future capability needs
+locked compute keyed by categories the source doesn't share, but no current capability
+does, and the grammar stays tiny until one exists. `skipped` reasons carry raw source
+error text (useful, but verbose); trimming is a later polish. Passing vocabularies
+through means downstream consumers see source-flavored values — the accepted cost of
+"the agent gets the real data."
+
 ## 2026-07-17 — The HTTP entrypoint is upstream; the deployment rail is personal
 
 **Decision.** `build --eject` will emit a Streamable HTTP entrypoint
