@@ -183,7 +183,7 @@ describe("buildServer", () => {
     const res = await client.callTool({ name: "import_recent", arguments: { rpe: 5 } });
     const content = res.content as Array<{ type: string; text: string }>;
     // Mock returns one activity for the GET; the for_each upserts it once.
-    expect(JSON.parse(content[0].text)).toEqual({ steps: 2, reads: 1, writes: 1 });
+    expect(JSON.parse(content[0].text)).toEqual({ steps: 2, reads: 1, writes: 1, skipped: [] });
     expect(last.method).toBe("POST"); // last request is the /session upsert
     expect(last.url).toBe("/session");
     expect(JSON.parse(last.body)).toEqual({ external_id: 1, sport: "run", rpe: 5 });

@@ -16,6 +16,11 @@ import { request, type HttpSource } from "./http.js";
  *   - `$.field` / `$.a.b`  → JSONPath-lite extraction from the current item.
  *   - `"$.x / 60"`         → a tiny arithmetic expression over extracted numbers.
  *   - anything else        → a literal.
+ *
+ * Resolved bodies are then COERCED toward the write entity's declared schema
+ * types (the `coerce` leg of the declare/coerce/ask dial): `int` rounds,
+ * `enum[...]` case-folds onto a declared value. A value that can't be coerced
+ * passes through unchanged — the source's own validation stays the authority.
  */
 
 export interface PipelineCall {
@@ -37,6 +42,8 @@ export interface PipelineRunContext {
   sources: Record<string, HttpSource>;
   /** Tool input, used to fill `ask` fields in a `map`. */
   args: Record<string, unknown>;
+  /** Manifest `schema` entities; write-step bodies are coerced to the target entity's field types. */
+  schema?: Record<string, Record<string, unknown>>;
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
 }
@@ -45,6 +52,12 @@ export interface PipelineResult {
   steps: number;
   reads: number;
   writes: number;
+  /**
+   * `for_each` rows whose write the source rejected (or whose map failed to
+   * resolve) — skipped and reported so the model can relay them, never fatal.
+   * Step-level failures (a bad GET, unknown source) still abort the pipeline.
+   */
+  skipped: Array<{ reason: string }>;
 }
 
 // ── JSONPath-lite + arithmetic over `map` values ─────────────────────────────
@@ -126,6 +139,35 @@ function resolveMapValue(
   return spec; // plain literal
 }
 
+/** Entity name a path targets (`/plan_week` → `plan_week`). */
+export function entityFromPath(path: string): string {
+  return path.replace(/^\//, "").split("?")[0];
+}
+
+const ENUM_RE = /^enum\[(.*)\]$/;
+
+/**
+ * Coerce one resolved value toward its declared schema type. Only mechanical
+ * normalizations live here — anything needing judgment is `ask`, not `coerce`.
+ */
+export function coerceToFieldType(value: unknown, spec: unknown): unknown {
+  if (typeof spec !== "string") return value; // derived/object/unknown field → untouched
+  const type = spec.trim();
+
+  if (type === "int" && typeof value === "number") return Math.round(value);
+
+  const enumMatch = type.match(ENUM_RE);
+  if (enumMatch && typeof value === "string") {
+    const match = enumMatch[1]
+      .split(",")
+      .map((v) => v.trim())
+      .find((v) => v.toLowerCase() === value.toLowerCase());
+    if (match) return match;
+  }
+
+  return value;
+}
+
 /** Build a request body from a `map`, resolved against one `for_each` item. */
 export function resolveMap(
   map: Record<string, unknown>,
@@ -149,6 +191,7 @@ export async function executePipeline(
   const vars: Record<string, unknown> = {};
   let reads = 0;
   let writes = 0;
+  const skipped: Array<{ reason: string }> = [];
 
   const resolveSource = (name: string): HttpSource => {
     const source = ctx.sources[name];
@@ -167,18 +210,28 @@ export async function executePipeline(
       if (!call) throw new Error("a for_each step must declare a `call`");
       const source = resolveSource(call.source);
       const method = (call.method ?? "POST") as "GET" | "POST" | "PATCH" | "DELETE";
+      const entity = ctx.schema?.[entityFromPath(call.path)];
       for (const item of list) {
-        const body = resolveMap(step.map ?? {}, item, ctx.args);
-        await request({
-          source,
-          method,
-          path: call.path,
-          prefer: call.prefer,
-          body,
-          env: ctx.env,
-          fetchImpl: ctx.fetchImpl,
-        });
-        writes++;
+        try {
+          let body = resolveMap(step.map ?? {}, item, ctx.args);
+          if (entity) {
+            body = Object.fromEntries(
+              Object.entries(body).map(([key, value]) => [key, coerceToFieldType(value, entity[key])]),
+            );
+          }
+          await request({
+            source,
+            method,
+            path: call.path,
+            prefer: call.prefer,
+            body,
+            env: ctx.env,
+            fetchImpl: ctx.fetchImpl,
+          });
+          writes++;
+        } catch (err) {
+          skipped.push({ reason: err instanceof Error ? err.message : String(err) });
+        }
       }
     } else if (step.call) {
       const call = step.call;
@@ -201,5 +254,5 @@ export async function executePipeline(
     }
   }
 
-  return { steps: steps.length, reads, writes };
+  return { steps: steps.length, reads, writes, skipped };
 }
