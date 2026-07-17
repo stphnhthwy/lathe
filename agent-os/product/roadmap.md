@@ -65,6 +65,19 @@ standalone code comes last.
   M5 to ✅ once that trace lands.
 
 ## Phase 2: Post-Launch
+
+### M6 — eject HTTP entrypoint (spec shaped, not started)
+- `build --eject` additionally emits `dist/main-http.js` — the same vendored
+  `buildServer()` behind Streamable HTTP on `node:http` (`ALL /mcp` + `GET /health`,
+  `PORT` env, default 3000). Both entrypoints always emitted, no flag; ejected deps
+  stay `@modelcontextprotocol/sdk` + `zod`.
+- Boundary: no Dockerfile/CI/compose emission (the deployment rail is the consumer's)
+  and no auth/per-request identity (single-tenant env credentials — "live first,
+  auth next"). Spec: `agent-os/specs/2026-07-17-2332-m6-eject-http/`.
+
+### Later
+- Auth / per-request identity for hosted capabilities (JWT forwarding through the
+  `http` source adapter) — its own milestone, not a rider on M6.
 - Richer source adapters (OAuth/refresh for real APIs like Strava/Shopify).
 - Broader formula grammar before escaping to code.
 - npm publish, CI, contribution docs.

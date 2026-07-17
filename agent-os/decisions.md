@@ -3,6 +3,32 @@
 A chronological log of significant decisions, newest first. Each entry: the decision, why,
 and any trade-offs accepted.
 
+## 2026-07-17 — The HTTP entrypoint is upstream; the deployment rail is personal
+
+**Decision.** `build --eject` will emit a Streamable HTTP entrypoint
+(`dist/main-http.js` — `node:http`, `ALL /mcp` + `GET /health`, `PORT` env)
+alongside the stdio `dist/main.js`, always both, no `--transport` flag (M6,
+spec at `agent-os/specs/2026-07-17-2332-m6-eject-http/`). lathe does **not**
+emit a Dockerfile, CI workflow, compose entry, or any other deployment
+scaffolding, and the ejected server stays single-tenant (source credentials
+from the `env:` block; no per-request identity).
+
+**Why.** The litmus for what belongs in the open-source package: *would a
+lathe user who has never heard of your deployment target need it?* Streamable
+HTTP — yes; it is the ecosystem-standard transport for any MCP server not
+launched as a desktop subprocess, and without it the ejected "deliverable"
+only works next to Claude Desktop. Registry/orchestrator/network choices — no;
+they are the consumer's opinion, and emitting them turns lathe into a deploy
+tool for one person's stack. Keeping ejected `dependencies` at
+`@modelcontextprotocol/sdk` + `zod` forces `node:http` over express.
+
+**Trade-offs.** Consumers hand-write their own container/deploy wrapper (a
+few lines; the first-party stack repo does exactly this and doubles as the
+dogfood). Anyone reaching the HTTP port can call the tools — acceptable
+behind a private network, documented plainly in the emitted README, and the
+reason auth/JWT-forwarding is named as its own future milestone rather than
+a rider on M6.
+
 ## 2026-07-01 — Ejection vendors the interpreter and hardcodes the manifest, not per-tool codegen
 
 **Decision.** `lathe build --eject` emits a standalone `mcp-server/` by (1)
