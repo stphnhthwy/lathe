@@ -47,7 +47,7 @@ standalone code comes last.
   framed as authoritative. `import_recent` deferred (needs Strava token; covered
   by M3 pipeline tests).
 
-### M5 — `build --eject` — code complete, live smoke pending
+### M5 — `build --eject` ✅
 - `lathe build --eject` emits `<out>/{SKILL.md, references/, mcp-server/}`.
   `mcp-server/` runs with only `@modelcontextprotocol/sdk` + `zod` — no
   `@lathe/cli` in its `dependencies`, no `yaml` (the manifest ships as a JS
@@ -58,13 +58,39 @@ standalone code comes last.
   `examples/training-coach/` (all four tools registered, `initialize` +
   `tools/list` round-trip over stdio); `npm pack --dry-run` ships only the
   intended 10 files; pack-and-install into a scratch consumer runs via the
-  bin with `@lathe/cli` absent from `node_modules`.
-- **Pending:** live Claude Desktop smoke against local PostgREST with
-  `@lathe/cli` uninstalled globally (mirrors M4's smoke path). Placeholder
-  in `agent-os/specs/2026-07-01-1217-m5-build-eject/references.md`. Flip
-  M5 to ✅ once that trace lands.
+  bin with `@lathe/cli` absent from `node_modules`; and a live smoke of the
+  ejected bundle with real Strava data — all four tools through MCP
+  Inspector plus a Claude client conversation (`get_history` returned 10
+  imported sessions, `weekly_checkin` returned frozen `rolling_load`/`acwr`),
+  with `@lathe/cli` absent globally. Trace in
+  `agent-os/specs/2026-07-01-1217-m5-build-eject/references.md`. The smoke
+  also hardened the interpreter: mapped bodies now coerce to declared schema
+  types, rejected `for_each` rows skip-and-report, and source vocabularies
+  pass through (decisions 2026-07-18).
 
 ## Phase 2: Post-Launch
+
+### M6 — eject HTTP entrypoint (spec shaped, not started)
+- `build --eject` additionally emits `dist/main-http.js` — the same vendored
+  `buildServer()` behind Streamable HTTP on `node:http` (`ALL /mcp` + `GET /health`,
+  `PORT` env, default 3000). Both entrypoints always emitted, no flag; ejected deps
+  stay `@modelcontextprotocol/sdk` + `zod`.
+- Boundary: no Dockerfile/CI/compose emission (the deployment rail is the consumer's)
+  and no auth/per-request identity (single-tenant env credentials — "live first,
+  auth next"). Spec: `agent-os/specs/2026-07-17-2332-m6-eject-http/`.
+
+### Later
+- **A lighter capability-testing harness.** Exercising a real capability end-to-end
+  today needs the full dependency stack — a fresh OAuth token (Strava's expires in
+  6h), a running local Supabase, env plumbing into whichever client is doing the
+  calling — a lot of tinkering just to test the idea (felt hard during the M5/
+  2026-07-18 smoke). Wanted: recorded/replayable source fixtures or a
+  `lathe serve --mock-sources` mode that fakes declared sources from sample
+  payloads, so the manifest → tools → locked-compute loop can be verified with
+  zero live credentials. Live smokes stay the final gate; they shouldn't be the
+  only way to try an idea.
+- Auth / per-request identity for hosted capabilities (JWT forwarding through the
+  `http` source adapter) — its own milestone, not a rider on M6.
 - Richer source adapters (OAuth/refresh for real APIs like Strava/Shopify).
 - Broader formula grammar before escaping to code.
 - npm publish, CI, contribution docs.

@@ -3,7 +3,9 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { request, type HttpSource } from "./http.js";
 import { entityInputShape } from "./schema-to-zod.js";
-import { executePipeline, type PipelineStep } from "./pipeline.js";
+import { entityFromPath, executePipeline, type PipelineStep } from "./pipeline.js";
+
+export { entityFromPath };
 import {
   entitiesForMetrics,
   evaluateMetric,
@@ -76,10 +78,6 @@ function isCallSpec(value: unknown): value is { source: string; path: string } {
   );
 }
 
-/** Entity name a path targets (`/plan_week` → `plan_week`). */
-export function entityFromPath(path: string): string {
-  return path.replace(/^\//, "").split("?")[0];
-}
 
 const text = (value: unknown): CallToolResult => ({
   content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }],
@@ -190,6 +188,7 @@ export function toRegistration(
           await executePipeline(steps, {
             sources: ctx.sources,
             args,
+            schema: ctx.schema,
             env: ctx.env,
             fetchImpl: ctx.fetchImpl,
           }),

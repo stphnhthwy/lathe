@@ -112,7 +112,7 @@ Early. The build order:
 - `lathe init`: scaffold a new capability ✅
 - `lathe serve`: a generic server that reads the manifest, registers tools, runs locked compute ✅
 - connect to Claude over stdio and run a real flow ✅
-- `lathe build --eject`: standalone SKILL.md + mcp-server/ — code complete, live smoke pending
+- `lathe build --eject`: standalone SKILL.md + mcp-server/, live-smoked end to end ✅
 
 See [`agent-os/product/`](agent-os/product/) for the mission, roadmap, and tech stack, and
 [`agent-os/standards/`](agent-os/standards/) for the conventions this project is built to.

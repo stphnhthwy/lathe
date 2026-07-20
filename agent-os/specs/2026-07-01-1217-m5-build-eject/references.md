@@ -150,8 +150,79 @@ ejected server truly runs standalone.
 
 ## Live smoke run (Claude Desktop)
 
-_TODO — wire the emitted `mcp-server/` into `claude_desktop_config.json`
-via `command: "node"` + `args: ["<abs>/dist/main.js"]`, restart Claude
-Desktop, call `get_history` and `weekly_checkin` against local PostgREST
-per `memory/stack-postgrest-testing.md`. `@lathe/cli` must be uninstalled
-globally (`npm ls -g @lathe/cli` empty) during the run to prove standalone._
+**Date:** 2026-07-18 (prep + terminal/Inspector layers 2026-07-17 → 18)
+
+**Standalone proof:** `npm ls -g @lathe/cli` → `(empty)` throughout the run;
+the emitted `mcp-server/node_modules` contains only
+`{"@modelcontextprotocol/sdk":"^1.0.0","zod":"^3.23.0"}` and their deps
+(`npm ls @lathe/cli` inside the bundle → `(empty)`). Node v22.14.0.
+
+**Eject:** fresh `node dist/cli.js build --eject examples/training-coach/capability.yaml
+--out ~/Development/lathe-m5-smoke/training-coach` — 10 emitted files + `SKILL.md`;
+one expected warning (`methodology.pdf` placeholder not in repo).
+
+**Config used** (sanitized):
+
+```json
+{
+  "mcpServers": {
+    "training-coach": {
+      "command": "node",
+      "args": ["<smoke-dir>/training-coach/mcp-server/dist/main.js"],
+      "env": {
+        "SUPABASE_URL": "http://localhost:8000",
+        "SUPABASE_KEY": "sb_secret_...",
+        "STRAVA_TOKEN": "<6h access token, activity:read_all>"
+      }
+    }
+  }
+}
+```
+
+**What the smoke found (and fixed) before the client hop.** Running the
+pipeline against real Strava data surfaced three interpreter defects —
+float map results rejected by int columns, capitalized `sport_type`
+rejected by the enum's check constraint, and a whole-batch abort on the
+first unmappable row. Fixed as `fix: coerce mapped bodies to schema types;
+skip rows the store rejects`, plus the vocabulary-passthrough decision
+(`agent-os/decisions.md`, 2026-07-18) and stack migration `20260718001500`.
+The trace below is against the re-ejected bundle containing those fixes.
+
+**Layer: scripted stdio client** (MCP SDK `Client` + `StdioClientTransport`,
+launching `dist/main.js` exactly as Claude Desktop does):
+
+- stderr banner: `training-coach v0.1.0 — standalone mcp-server` /
+  `serving 4 tool(s): import_recent, get_history, save_plan, weekly_checkin`.
+- `import_recent` (rpe 6) → `{ "steps": 2, "reads": 1, "writes": 10, "skipped": [] }` —
+  all ten real activities upserted, source vocabulary intact.
+- `get_history` → 10 rows, newest:
+  `{"external_id":"19352836947","logged_at":"2026-07-17T16:03:25+00:00",
+  "sport":"Yoga","duration_min":56,"rpe":6,"load":336}` — passthrough sport,
+  coerced int, derived load.
+- `weekly_checkin` → `{ "computed_locked": true, "metrics":
+  { "rolling_load": 2514, "acwr": 0.489… }, "note": "Authoritative values
+  computed by lathe. Reason about these; do not recompute or estimate them." }`
+
+**Layer: MCP Inspector (hands-on).** Stdio connect to the same bundle with env
+passed via `-e`; all four tools listed and exercised interactively —
+`get_history`, `weekly_checkin`, `import_recent` (idempotent rerun), `save_plan`.
+
+**Layer: Claude client (the M5 acceptance).** The emitted bundle was added to
+`claude_desktop_config.json` as `command: "node"`,
+`args: ["<smoke-dir>/training-coach/mcp-server/dist/main.js"]` (no `npx`, no
+`@lathe/cli`) and consumed by the Claude desktop app as an MCP connector.
+In conversation, the model called:
+
+- `get_history` → all 10 rows, source vocabulary verbatim
+  (`Yoga`, `HighIntensityIntervalTraining`, `Workout`, `Walk`), coerced ints,
+  derived `load` present on every row.
+- `weekly_checkin` → `{ "computed_locked": true, "metrics":
+  { "rolling_load": 2514, "acwr": 0.3747… }, "note": … }` — the model reasoned
+  about the frozen values rather than recomputing them. (ACWR shifted from the
+  prior night's 0.489 because the 7d window slid past midnight — locked compute
+  moving with `now`, as designed.)
+
+Also exercised in passing: a config typo (placeholder text pasted as
+`SUPABASE_KEY`) surfaced exactly as the README's troubleshooting predicts, and
+a cold Docker daemon reproduced PostgREST's `PGRST002` retry — both external
+to the bundle. M5 flips ✅ on this trace.
