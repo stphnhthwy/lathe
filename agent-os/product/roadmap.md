@@ -76,6 +76,15 @@ standalone code comes last.
   auth next"). Spec: `agent-os/specs/2026-07-17-2332-m6-eject-http/`.
 
 ### Later
+- **A lighter capability-testing harness.** Exercising a real capability end-to-end
+  today needs the full dependency stack — a fresh OAuth token (Strava's expires in
+  6h), a running local Supabase, env plumbing into whichever client is doing the
+  calling — a lot of tinkering just to test the idea (felt hard during the M5/
+  2026-07-18 smoke). Wanted: recorded/replayable source fixtures or a
+  `lathe serve --mock-sources` mode that fakes declared sources from sample
+  payloads, so the manifest → tools → locked-compute loop can be verified with
+  zero live credentials. Live smokes stay the final gate; they shouldn't be the
+  only way to try an idea.
 - Auth / per-request identity for hosted capabilities (JWT forwarding through the
   `http` source adapter) — its own milestone, not a rider on M6.
 - Richer source adapters (OAuth/refresh for real APIs like Strava/Shopify).
