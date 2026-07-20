@@ -47,7 +47,7 @@ standalone code comes last.
   framed as authoritative. `import_recent` deferred (needs Strava token; covered
   by M3 pipeline tests).
 
-### M5 — `build --eject` — code complete, live smoke pending
+### M5 — `build --eject` ✅
 - `lathe build --eject` emits `<out>/{SKILL.md, references/, mcp-server/}`.
   `mcp-server/` runs with only `@modelcontextprotocol/sdk` + `zod` — no
   `@lathe/cli` in its `dependencies`, no `yaml` (the manifest ships as a JS
@@ -58,11 +58,15 @@ standalone code comes last.
   `examples/training-coach/` (all four tools registered, `initialize` +
   `tools/list` round-trip over stdio); `npm pack --dry-run` ships only the
   intended 10 files; pack-and-install into a scratch consumer runs via the
-  bin with `@lathe/cli` absent from `node_modules`.
-- **Pending:** live Claude Desktop smoke against local PostgREST with
-  `@lathe/cli` uninstalled globally (mirrors M4's smoke path). Placeholder
-  in `agent-os/specs/2026-07-01-1217-m5-build-eject/references.md`. Flip
-  M5 to ✅ once that trace lands.
+  bin with `@lathe/cli` absent from `node_modules`; and a live smoke of the
+  ejected bundle with real Strava data — all four tools through MCP
+  Inspector plus a Claude client conversation (`get_history` returned 10
+  imported sessions, `weekly_checkin` returned frozen `rolling_load`/`acwr`),
+  with `@lathe/cli` absent globally. Trace in
+  `agent-os/specs/2026-07-01-1217-m5-build-eject/references.md`. The smoke
+  also hardened the interpreter: mapped bodies now coerce to declared schema
+  types, rejected `for_each` rows skip-and-report, and source vocabularies
+  pass through (decisions 2026-07-18).
 
 ## Phase 2: Post-Launch
 
