@@ -29,6 +29,7 @@ npm i -D @lathe/cli          # add to your project (CLI name is `lathe`)
 npx lathe init my-capability  # scaffold capability.yaml + SKILL.md + references/
 # edit capability.yaml
 npx lathe check               # parse + validate the manifest
+npx lathe studio              # open a local web UI over the capability (read-only for now)
 npx lathe serve               # run the MCP server locally (test in MCP Inspector)
 npx lathe build --eject       # emit a standalone SKILL.md + mcp-server/
 ```

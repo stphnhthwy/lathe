@@ -36,7 +36,8 @@ export interface RequestOptions {
   fetchImpl?: typeof fetch;
 }
 
-const ENV_REF = /\$\{([A-Z0-9_]+)\}/gi;
+/** The definition of "a referenced env var" — shared by the studio's env-status. */
+export const ENV_REF = /\$\{([A-Z0-9_]+)\}/gi;
 
 /**
  * Replace every `${VAR}` in a string with its environment value. Throws a clear

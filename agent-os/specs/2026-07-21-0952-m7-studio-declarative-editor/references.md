@@ -1,0 +1,161 @@
+# References — M7 Studio
+
+## Visuals
+
+- `lathe-wireframes.html` — the wireframe this milestone came from (user's
+  desktop; shared in the shaping session but **not committed to the repo and
+  not available in the environment where this spec was written**). The session
+  framing: a Studio in the Supabase/Prisma mold; focus the declarative
+  aspects (sources, skill, behavior); scrub the generative aspects down to
+  plain fields. **Action for implementation start: commit a copy of the
+  wireframe into this folder and reconcile panel names/layout in `shape.md`
+  against it.**
+
+## Code to study (grounding for the design)
+
+- `src/manifest/schema.ts` — the zod shape every form maps onto; also the
+  boundary of what the studio may validate (structural only).
+- `src/manifest/load.ts` — read path `GET /api/manifest` wraps.
+- `src/server/http.ts` — `resolveEnv` (env-status reuses its `${VAR}`
+  contract; note the regex `ENV_REF` is the definition of "a referenced var")
+  and `request` (source-check/read-preview call it directly).
+- `src/server/build.ts` — how the engine derives an entity's read source from
+  a `readonly` tool; read-preview reuses that derivation.
+- `src/build/emit.ts` (`mainHttpJs()`) — M6's `node:http` two-route server;
+  the studio server follows the same no-framework shape.
+- `examples/training-coach/capability.yaml` — the comment-rich round-trip
+  fixture; preserving its comments through a studio save is the Slice 2
+  acceptance bar.
+
+## Prior art
+
+- **Prisma Studio** — local command opens a browser UI over the schema/data;
+  the interaction model (`lathe studio` ≈ `prisma studio`) and the
+  "one directory, one local server, no auth" posture.
+- **Supabase Studio** — the visual reference for the sources/data panels in
+  the wireframe; lathe's analogue browses *declarations plus evidence*
+  (env badges, connection check) since lathe owns no data — the
+  declared-read preview is deferred.
+- **shadcn/ui on Base UI primitives** — the confirmed component library.
+  Copy-in model: the CLI generates component source into
+  `studio/src/components/ui`; the rule is compose-don't-invent, and any
+  custom piece builds on the Base UI primitives underneath.
+
+## Smoke traces
+
+### Slice 1 — read-only studio (2026-07-21)
+
+- Built CLI (`node dist/cli.js studio examples/training-coach --no-open --port
+  4989`): `GET /api/manifest` returned the training-coach manifest with
+  `issues: []` and an mtime; `GET /` served the built UI (`dist/studio/ui`).
+- Headless-browser pass over all four panels (Playwright screenshots):
+  **Sources** shows strava/store cards with type badges, auth kind + token
+  refs, headers, and `${VAR}` environment chips; **Skill** shows identity,
+  references, emit; **Behavior** shows the locked-compute badges
+  (`load`/`rolling_load`/`acwr`), both schema entities with the `derived` +
+  `locked` badge on `load`, and the metrics table; **Tools** shows
+  `import_recent` as `pipeline · 2 steps` with `ask ×1`, and the atomic tools
+  with `readonly`/`confirm` badges. No console errors.
+- `npm pack --dry-run` ships `dist/studio/{api,server}.js` + `dist/studio/ui/`
+  (index.html + hashed assets) inside the existing `files: ["dist"]`.
+- Vitest: 74/74 including the 9 new studio server tests (valid manifest,
+  invalid-still-opens, parse error, missing file, API 404, static serving,
+  SPA fallback, traversal guard, UI-not-built 503).
+
+### Slice 2 — sources editing (2026-07-21)
+
+- **Round-trip approach.** `yaml`'s whole-document `toString()` normalizes
+  comment columns, flow padding, and line folding — a plain parse→stringify of
+  the training-coach fixture already changes ~40 lines. So `yaml-edit.ts` uses
+  the Document API only to *locate* nodes and applies each edit by splicing
+  text at the node's byte range; untouched lines stay byte-identical by
+  construction. 20 tests, fixture: the training-coach manifest.
+- **API smoke** (tsx dev loop, PostgREST stubbed by a 5-line `node:http` 200
+  responder on `:3999`, `SUPABASE_URL`/`SUPABASE_KEY`/`STRAVA_TOKEN` set):
+  `GET /api/env-status` → all three vars `true` (booleans only);
+  `POST /api/source-check {source: store}` → `{ok: true, status: 200}`;
+  `PUT /api/manifest` setting `store.base_url` → `git diff` on the example
+  showed exactly the one intended line (alignment + trailing comment intact);
+  replaying the PUT with the old `baseMtimeMs` → 409, file untouched.
+- **UI smoke** (headless Chromium over the built bundle): edited
+  `store.base_url` and added an `x-client` header via the Sources form —
+  header showed "2 unsaved changes", Save cleared it, and `git diff` showed
+  exactly the two intended lines; "Check connection" on `store` rendered
+  `reachable · 200` against the stub; env badges rendered resolved (check
+  icon) for all three vars. No console errors.
+- `lathe check` passes on a studio-saved manifest (same `manifestSchema`).
+- Vitest: 104/104 (20 yaml-edit + 10 new route tests: PUT happy/409/400s,
+  env-status, source-check ok/non-2xx/missing-env/unknown/non-http/
+  method-guard). `npm pack --dry-run` still ships `dist/studio/`.
+
+### Slice 3 — skill editing (2026-07-21)
+
+- **Sequence edits.** References and emit needed the seq ops slice 2 deferred:
+  `yaml-edit.ts` gained set-item, append (`index === length`), remove-item
+  (block and flow, comma handling both ends), and create-a-seq-from-scratch
+  (`references:` + `  - value` block lines; last-item removal collapses to
+  `[]`). 11 new tests on the fixture's `references`/`emit`.
+- **Edit-buffer ordering.** The client buffer changed from path-keyed map to
+  ordered array: sequence indexes only mean anything relative to the state
+  each edit saw, so client and server must apply the identical op list in
+  order. Merging is allowed only for consecutive sets on the same path
+  (keystrokes); removing a just-added value pops the pending set instead of
+  emitting a remove.
+- `GET /api/manifest` gains `referenceStatus` — per-`references[]` on-disk
+  existence, resolved relative to the manifest (tested with an exists/missing
+  pair fixture).
+- **UI smoke** (headless Chromium, built bundle): edited `version`, unchecked
+  `mcp`, added `./README.md` reference → save; `./methodology.pdf` (really
+  absent from the example) badged **missing**, `./README.md` badged **on
+  disk**, emit showed `skill` only. Then re-checked `mcp` and removed the
+  added reference → save; net `git diff` after both saves was exactly the one
+  line that stayed edited (`version`), proving flow-seq toggle and block-seq
+  append/remove round-trip diff-clean. No console errors.
+- Vitest: 116/116. Checkbox/Textarea vendored from shadcn base-ui sources
+  (registry still unreachable), same as Input/Label in slice 2.
+
+### Slice 4 — behavior editing (2026-07-21)
+
+- No new edit machinery needed — the slice rides entirely on slices 2–3's ops.
+  5 new yaml-edit tests pin the usage patterns: multi-line block-pair removal
+  (whole entity), nested block creation of `behavior.computed_locked` from
+  scratch, flow-map key add on a metric line (`window` onto `acwr`),
+  `enum[...]` staying a plain scalar in block context, and flow-seq
+  computed_locked toggling.
+- Behavior panel: schema entity cards with per-field dedicated inputs
+  (`derived:` expression, `enum[...]` value list, plain type string —
+  structural only), add/remove fields and entities (last-field removal takes
+  the whole entity; new entities start as `id: string`); metrics rows with
+  window/formula inputs and add/remove (clearing a window removes the key);
+  locked compute as a checkbox multi-select over derived fields + metrics
+  (+ any existing locked entries, so stale ones can be turned off).
+- Badge pass: `locked` / `derived` (Σ) / `ask` (?) unified as shared
+  components (`studio/src/components/dial-badges.tsx` — composition of
+  shadcn Badge, not a new primitive) and used across Behavior and Tools;
+  Tools now also badges `locked` on tools whose `reads` reference a locked
+  metric (`weekly_checkin`).
+- **UI smoke** (headless Chromium, built bundle): unchecked `rolling_load`,
+  set its window 14d→21d, extended the `phase` enum, added `notes: string`
+  to `session` → one save; `git diff` showed exactly those four lines,
+  alignment and trailing comments intact. `lathe check` passes on the saved
+  file. No console errors.
+- **Consumer install smoke** (M7 packaging verification): `npm pack` →
+  install the tarball into a scratch project → `npx lathe studio cap
+  --no-open` boots, `GET /api/manifest` returns the manifest and `GET /`
+  serves the shipped UI (200).
+- Vitest: 121/121.
+
+### Slice 1 implementation notes
+
+- The shadcn CLI's registry (`ui.shadcn.com`) was unreachable from the
+  implementation environment (network policy), so the equivalent output was
+  assembled from the shadcn-ui/ui sources directly: the `vite-app` template
+  (`apps/v4/public/r/templates/vite-app.tar.gz`), the Base UI component
+  sources (`apps/v4/registry/bases/base/ui/*.tsx`, imports rewritten to
+  `@/lib/utils`), the nova preset stylesheet
+  (`apps/v4/registry/styles/style-nova.css`, vendored as
+  `studio/src/style-nova.css`), and the v4 neutral oklch theme variables
+  (`apps/v4/app/globals.css`). `@import "shadcn/tailwind.css"` comes from the
+  `shadcn` npm package (a devDependency), which exports it. A
+  `components.json` (style nova, base `base`, neutral) is in place so
+  `npx shadcn add` works normally where the registry is reachable.

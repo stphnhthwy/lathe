@@ -32,11 +32,13 @@
   },
   "scripts": {
     "build": "tsc",
+    "build:studio": "npm --prefix studio ci && npm --prefix studio run build",
     "dev": "tsx src/cli.ts",
+    "dev:studio": "npm --prefix studio run dev",
     "check": "tsx src/cli.ts check",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run test && npm run build"
+    "prepublishOnly": "npm run test && npm run build && npm run build:studio"
   },
   "keywords": [
     "mcp",
