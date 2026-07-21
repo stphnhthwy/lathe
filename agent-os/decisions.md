@@ -3,6 +3,48 @@
 A chronological log of significant decisions, newest first. Each entry: the decision, why,
 and any trade-offs accepted.
 
+## 2026-07-21 — Studio is a shipped, purely declarative face on the manifest; shadcn/ui on Base UI primitives
+
+**Decision.** M7 adds `lathe studio [path]` — a local, loopback-only web UI
+over one capability directory (Prisma-Studio-style) that edits
+`capability.yaml` through structured forms. Four confirmed choices:
+
+1. **Purely declarative.** The studio renders and edits declarations
+   (Sources → Skill → Behavior; tools view-only) and never generates content.
+   Sources are exposed as declarations plus evidence: per-`${VAR}`
+   env-resolution badges (booleans only, never values) and an explicit
+   connection check through the existing `http` adapter. A declared-read row
+   preview was considered and deferred — it is the one piece that fetches
+   real source data.
+2. **The YAML file stays the source of truth.** Saves are path-scoped edits
+   through the `yaml` Document API so comments and key order survive; an
+   mtime guard refuses stale writes. Validation is the same zod
+   `manifestSchema` that `lathe check` runs — no second schema.
+3. **Frontend: Vite + React + shadcn/ui on Base UI primitives.** Compose,
+   don't invent: the UI is built from shadcn's copy-in components; anything
+   genuinely custom builds on the Base UI primitives underneath, never from
+   scratch.
+4. **The studio ships in the npm package** from the first slice —
+   `dist/studio/` static assets joining `files`, served by a `node:http`
+   server (the M6 no-framework litmus).
+
+**Why.** The manifest's point is that a capability is reviewable as data; a
+structured editor is the natural next face on that data, and the studio only
+pays off if `npx lathe studio` works out of the box (Prisma precedent).
+Keeping it purely declarative preserves the invariant that lathe reads the
+declaration while the engine executes it — the studio's only call paths reuse
+`resolveEnv`/`request` rather than growing new execution surface. shadcn's
+copy-in model keeps the UI stack owned-source rather than a component
+runtime dependency.
+
+**Trade-offs.** Vite + React + shadcn is the biggest toolchain addition this
+deliberately tiny repo has taken — accepted, confined to the `studio/` tree
+(the published artifact is still just static files). Comment preservation
+rules out the simple parse→stringify write path. Deferring the read preview
+means the studio shows no rows yet — the Supabase-studio moment waits for
+its own milestone. Spec:
+`agent-os/specs/2026-07-21-0952-m7-studio-declarative-editor/`.
+
 ## 2026-07-18 — Import semantics from real data: coerce mechanically, skip-and-report, pass through source vocabularies
 
 **Decision.** Three related contract decisions, all forced by running `import_recent`

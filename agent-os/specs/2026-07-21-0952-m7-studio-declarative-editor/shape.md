@@ -1,12 +1,11 @@
 # Shape — M7 Studio: a declarative capability editor (`lathe studio`)
 
-> **Status: shaped from product context, pending review.** This spec was shaped
-> against the wireframe (`lathe-wireframes.html`, discussed in session) plus the
-> product docs. The wireframe file itself was not available in the environment
-> where this spec was written, so panel naming/layout below follows the session
-> description — "Studio, similar to Supabase/Prisma studio" — and the manifest's
-> own section structure. Layout details should be reconciled against the
-> wireframe before implementation. Open questions are listed at the bottom.
+> **Status: reviewed and confirmed (2026-07-21).** Shaped against the wireframe
+> session ("Studio, similar to Supabase/Prisma studio") plus the product docs;
+> the open questions below were answered in review. Panel naming/layout follows
+> the manifest's own section structure — reconcile fine details against
+> `lathe-wireframes.html` opportunistically during implementation (the file
+> was not available in the environment where this spec was written).
 
 ## Scope
 
@@ -33,10 +32,10 @@ Delivered in four slices, each a real end-to-end loop:
 - **Slice 2 — sources.** The flagship panel. List declared sources; per-type
   forms (`http` first: `base_url`, `auth.kind` + `auth.token` env reference,
   `headers`; `mcp`/`postgres`/`sqlite` render as generic key/value forms until
-  their adapters exist). Three exposure mechanics beyond the fields themselves
-  (see "Exposing sources" below): env-resolution status, connection check, and
-  read preview. Saving writes `capability.yaml` back **preserving comments and
-  key order** (the `yaml` package's Document API).
+  their adapters exist). Two exposure mechanics beyond the fields themselves
+  (see "Exposing sources" below): env-resolution status and connection check.
+  Saving writes `capability.yaml` back **preserving comments and key order**
+  (the `yaml` package's Document API).
 - **Slice 3 — skill.** Capability identity (`capability`, `version`,
   `summary`), the `skill` file pointer, the `references` list with on-disk
   existence indicators (missing references already surface as eject warnings —
@@ -63,13 +62,14 @@ so the studio exposes sources as **declarations plus evidence they work**:
    through the existing `http` adapter (`request()` in `src/server/http.ts`)
    against a source and reports ok/status/error — the same call path `serve`
    uses, so a green check is meaningful. Explicit button, never automatic.
-3. **Read preview.** For a source that a `readonly` atomic tool already reads
-   (e.g. `store` → `get_history`), a "preview" runs that declared read and
-   shows the rows — the Supabase-studio moment, but grounded in what the
-   manifest declares rather than a table browser. Reuses the same
-   entity→read-source derivation the metric engine uses (decision 2026-06-29).
+A third mechanic — a **read preview** that runs a declared `readonly` read and
+shows rows (the Supabase-studio moment) — was considered and **deferred in
+review**: M7 stays purely declarative, and the preview is the one piece that
+fetches real data. It returns as its own slice/milestone when wanted; the
+entity→read-source derivation the metric engine uses (decision 2026-06-29) is
+the design it would reuse.
 
-## Proposed decisions (need confirmation)
+## Confirmed decisions (review, 2026-07-21)
 
 1. **Studio is a local dev tool, Prisma-style.** One capability directory, one
    local server, browser UI. No hosted mode, no auth, no multi-capability
@@ -82,13 +82,15 @@ so the studio exposes sources as **declarations plus evidence they work**:
    implementation constraint.
 3. **Server transport: `node:http`**, matching the M6 litmus — two-digit route
    count, no framework until routing outgrows trivial.
-4. **Frontend: Vite + React + TypeScript** in a separate `studio/` source tree,
-   built to `dist/studio/` static assets and shipped in the npm `files`.
-   Recommended because form-heavy UIs are what React is for and Vite keeps it
-   one build step; the alternative (no-build vanilla/preact single file, zero
-   new toolchain) is honest for Slice 1 but gets painful by Slice 2's dynamic
-   forms. **This is the biggest stack addition to a deliberately tiny repo —
-   confirm before implementation.**
+4. **Frontend: Vite + React + TypeScript + shadcn/ui on Base UI primitives**
+   in a separate `studio/` source tree, built to `dist/studio/` static assets
+   and **shipped in the npm `files`** from the first slice. Component rule
+   (confirmed): **do not invent new components** — compose the UI from
+   shadcn/ui components (generated into the studio tree, shadcn's
+   copy-in model); anything genuinely custom must be built on the underlying
+   Base UI primitives, never from scratch. shadcn assets are vendored source
+   (not a runtime component dependency), which fits the repo's
+   ship-what-you-own posture; only the built static bundle ships to npm.
 5. **Tools panel is view-only in M7.** Pipelines (`steps`, `map`, `for_each`,
    `ask`) are the deepest grammar; a form editor for them deserves its own
    shaped milestone with the wireframe in hand.
@@ -100,6 +102,8 @@ so the studio exposes sources as **declarations plus evidence they work**:
 
 - **Generative aspects** (AI-drafted SKILL.md, suggested metrics/mappings) —
   explicitly scrubbed; fields only.
+- **Read preview** (running a declared `readonly` read to show rows) —
+  deferred in review to keep M7 purely declarative; see "Exposing sources".
 - **Tool/pipeline editing** — view-only (proposed decision 5).
 - **Semantic validation** (formula grammar, JSONPath in `map`,
   source/tool cross-references) — same boundary as M1; the studio surfaces
@@ -143,15 +147,16 @@ so the studio exposes sources as **declarations plus evidence they work**:
   help you fix an invalid one. YAML that fails to *parse* renders as an error
   page pointing back at the CLI.
 
-## Open questions (for review before implementation)
+## Open questions — resolved in review (2026-07-21)
 
-1. Frontend stack: confirm Vite + React (proposed decision 4) vs no-build.
-2. Wireframe reconciliation: panel names/layout here are derived from manifest
-   sections — check against `lathe-wireframes.html` and adjust.
-3. Does `studio` ship in the published npm package from the first slice, or
-   stay dev-only (repo script) until it stabilizes?
-4. Read preview (sources slice): in scope for M7's Slice 2, or defer to keep
-   Slice 2 pure-declarative? It is the only piece that fetches real data.
+1. **Frontend stack:** Vite + React confirmed, **plus shadcn/ui as the
+   component library on Base UI primitives**. No new bespoke components —
+   compose from shadcn; anything custom builds on the primitives.
+2. **Wireframe reconciliation:** layout as specced looks good; reconcile fine
+   details against `lathe-wireframes.html` during implementation.
+3. **Packaging:** the studio **ships with the package** from the first slice
+   (`dist/studio/` in the npm `files`).
+4. **Read preview:** **deferred** — M7 is purely declarative.
 
 ## Standards Applied
 

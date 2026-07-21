@@ -34,8 +34,12 @@
   "one directory, one local server, no auth" posture.
 - **Supabase Studio** — the visual reference for the sources/data panels in
   the wireframe; lathe's analogue browses *declarations plus evidence*
-  (env badges, connection check, declared-read preview) since lathe owns no
-  data.
+  (env badges, connection check) since lathe owns no data — the
+  declared-read preview is deferred.
+- **shadcn/ui on Base UI primitives** — the confirmed component library.
+  Copy-in model: the CLI generates component source into
+  `studio/src/components/ui`; the rule is compose-don't-invent, and any
+  custom piece builds on the Base UI primitives underneath.
 
 ## Smoke traces
 

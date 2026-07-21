@@ -1,8 +1,8 @@
 # M7 — Studio: declarative capability editor (`lathe studio`)
 
-> Pending review — see the status note in `shape.md`. Slice 1 is safe to start
-> once the open questions (frontend stack, wireframe reconciliation) are
-> answered; Slices 2–4 depend on them only in layout, not in architecture.
+> Reviewed and confirmed 2026-07-21 — see `shape.md` for the resolved
+> decisions: Vite + React + shadcn/ui (Base UI primitives), ships in the npm
+> package, purely declarative (read preview deferred). Ready to implement.
 
 ## Context
 
@@ -34,8 +34,8 @@ src/
     server.ts            node:http server: static assets + JSON API
     api.ts               route handlers (manifest read/write, env-status, source-check)
     yaml-edit.ts         comment-preserving manifest mutation (yaml Document API)
-studio/                  Vite + React app (separate tsconfig; built by vite)
-  index.html, src/...
+studio/                  Vite + React + shadcn/ui app (separate tsconfig; built by vite)
+  index.html, src/...    shadcn components live in studio/src/components/ui (copy-in)
 dist/studio/             vite build output, served by server.ts, shipped in files
 ```
 
@@ -53,18 +53,27 @@ dist/studio/             vite build output, served by server.ts, shipped in file
 - `POST /api/source-check` — body `{ source, method?, path? }`; one `request()`
   through the http adapter; returns `{ ok, status?, error? }`. Only for
   `type: http` sources in M7.
-- `POST /api/read-preview` — body `{ tool }`; runs a declared `readonly` read
-  and returns rows (capped, e.g. first 20). *(Slice 2, pending open question 4.)*
 
-### Frontend (pending stack confirmation)
+*(A `POST /api/read-preview` route — running a declared `readonly` read for
+rows — was deferred in review; M7 stays purely declarative.)*
 
-Vite + React + TS. One page, left nav of panels (matching the wireframe's
-Studio layout): **Sources**, **Skill**, **Behavior**, **Tools (view-only)**.
-A persistent validation bar renders zod issues, each linking to its panel.
-Forms are controlled inputs over the manifest JSON; Save issues the path-scoped
-`PUT`. The declare/defer dial gets visual vocabulary: locked
-(`computed_locked`), derived (`derived:` fields), and deferred (`ask`) values
-are badged distinctly wherever they appear.
+### Frontend
+
+Vite + React + TS, with **shadcn/ui as the component library on Base UI
+primitives** — components are generated into the studio tree via the shadcn
+CLI (copy-in model; vendored source, not a runtime component dependency).
+**Component rule: don't invent new components.** Compose panels/forms from
+shadcn's inventory (form, input, select, tabs, badge, dialog, table, sidebar,
+…); anything genuinely custom is built on the Base UI primitives underneath,
+never from scratch.
+
+One page, left nav of panels (matching the wireframe's Studio layout):
+**Sources**, **Skill**, **Behavior**, **Tools (view-only)**. A persistent
+validation bar renders zod issues, each linking to its panel. Forms are
+controlled inputs over the manifest JSON; Save issues the path-scoped `PUT`.
+The declare/defer dial gets visual vocabulary: locked (`computed_locked`),
+derived (`derived:` fields), and deferred (`ask`) values are badged
+distinctly wherever they appear (shadcn `badge` variants).
 
 ## Slices
 
@@ -73,8 +82,10 @@ are badged distinctly wherever they appear.
    of `dist/studio/`; `lathe studio [path] [--port] [--no-open]` command
    (default port 4989 or next free; prints URL to stderr — stdout stays clean
    by CLI habit even though no protocol runs on it).
-2. Frontend scaffold + panels rendering the training-coach manifest read-only,
-   validation bar, invalid-manifest-still-opens behavior.
+2. Frontend scaffold (Vite + React + shadcn/ui init on Base UI primitives,
+   `dist/studio/` build wired into the package build + `files`) + panels
+   rendering the training-coach manifest read-only, validation bar,
+   invalid-manifest-still-opens behavior.
 3. Tests: API route unit tests (inject a fixture dir); command registers; a
    served-asset smoke.
 
@@ -86,7 +97,7 @@ are badged distinctly wherever they appear.
    `POST /api/source-check` (mock fetch in tests, live PostgREST in smoke).
 3. Sources panel: typed `http` form (base_url, auth kind/token ref, headers
    key-value rows), generic key-value form for other types, env badges,
-   check button. Read preview if confirmed in scope.
+   check button.
 
 ### Slice 3 — skill
 1. Identity fields (`capability`, `version`, `summary`), `skill` path,
@@ -111,7 +122,7 @@ are badged distinctly wherever they appear.
    acceptance is editing the `store` source, seeing env badges for
    `${SUPABASE_URL}`/`${SUPABASE_KEY}`, a green source-check against local
    PostgREST, and a diff-clean save. Trace lands in `references.md`.
-4. If shipped in the package: `npm pack --dry-run` includes `dist/studio/`;
+4. Packaging (studio ships): `npm pack --dry-run` includes `dist/studio/`;
    consumer install smoke runs `npx lathe studio`.
 
 ## Out of scope — later milestones
@@ -119,6 +130,8 @@ are badged distinctly wherever they appear.
 - Tool/pipeline **editing** (form editor for `steps`/`map`/`ask`) — own
   milestone, wireframe in hand.
 - Generative assists of any kind.
+- **Read preview** (rows via a declared `readonly` read) — deferred in
+  review; M7 fetches no source data beyond the explicit connection check.
 - Semantic validation (formula grammar, JSONPath, cross-refs) — when the
   engine grows it, the studio inherits it through the shared schema.
 - Typed forms for `mcp`/`postgres`/`sqlite` sources — track the adapters.

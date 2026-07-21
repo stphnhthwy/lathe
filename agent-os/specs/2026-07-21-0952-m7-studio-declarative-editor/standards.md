@@ -20,10 +20,11 @@ practice. The vitest build gate applies to the new `src/studio/` code.
 
 ## `testing/packaging`
 
-If the studio ships in `@lathe/cli` (open question 3): `dist/studio/` joins
+The studio ships in `@lathe/cli` (confirmed in review): `dist/studio/` joins
 the `files` allow-list and the `npm pack --dry-run` assertions, and the
-consumer install smoke gains `npx lathe studio` boot. If it stays dev-only,
-the pack assertions instead prove `dist/studio/` is **excluded**.
+consumer install smoke gains `npx lathe studio` boot. The `studio/` source
+tree (including copied-in shadcn components) is **not** packed — only the
+built bundle ships.
 
 ## `manifest/spec-not-code`
 
