@@ -79,6 +79,21 @@ standalone code comes last.
   and no auth/per-request identity (single-tenant env credentials — "live first,
   auth next"). Spec: `agent-os/specs/2026-07-17-2332-m6-eject-http/`.
 
+### M7 — Studio: declarative capability editor (spec shaped, pending review, not started)
+- `lathe studio [path]` — a local web UI over one capability directory,
+  Prisma-Studio-style: structured forms for **Sources → Skill → Behavior**
+  (that priority order), tools view-only, nothing generative — fields only.
+- Sources are exposed as declarations plus evidence they work: per-`${VAR}`
+  env-resolution badges (booleans, never values), an explicit connection
+  check through the existing `http` adapter, and (open question) a preview
+  via a declared `readonly` read.
+- Edits write `capability.yaml` back **preserving comments and key order**
+  (the `yaml` Document API); validation is the same zod `manifestSchema`
+  that `lathe check` runs. Server is `node:http` (M6 litmus), loopback only.
+- Spec: `agent-os/specs/2026-07-21-0952-m7-studio-declarative-editor/` —
+  open questions there (frontend stack, wireframe reconciliation, whether
+  studio ships in the npm package) need review before implementation.
+
 ### Later
 - **A lighter capability-testing harness.** Exercising a real capability end-to-end
   today needs the full dependency stack — a fresh OAuth token (Strava's expires in
