@@ -30,9 +30,19 @@ export interface StudioHandle {
 const MANIFEST_FILE = "capability.yaml";
 const DEFAULT_PORT = 4989;
 
-/** The built UI ships beside this module: `dist/studio/server.js` → `dist/studio/ui/`. */
+/**
+ * The built UI ships beside the BUILT module: `dist/studio/server.js` →
+ * `dist/studio/ui/`. In the dev loop this module runs from `src/studio/`
+ * (tsx), where no `ui/` exists — fall back to the repo's `dist/studio/ui`
+ * so `npx tsx src/cli.ts studio` serves the last `build:studio` output.
+ */
 function defaultStaticDir(): string {
-  return join(dirname(fileURLToPath(import.meta.url)), "ui");
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    join(moduleDir, "ui"),
+    join(moduleDir, "..", "..", "dist", "studio", "ui"),
+  ];
+  return candidates.find((dir) => existsSync(join(dir, "index.html"))) ?? candidates[0];
 }
 
 const CONTENT_TYPES: Record<string, string> = {
