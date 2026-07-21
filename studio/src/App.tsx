@@ -6,7 +6,16 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
-import { asString, type ManifestState } from "@/lib/manifest"
+import {
+  applyEditsToJson,
+  asString,
+  getAtPath,
+  pathKey,
+  type EditPath,
+  type ManifestEdit,
+  type ManifestState,
+  type ScalarValue,
+} from "@/lib/manifest"
 import { BehaviorPanel } from "@/panels/behavior"
 import { SkillPanel } from "@/panels/skill"
 import { SourcesPanel } from "@/panels/sources"
@@ -25,13 +34,95 @@ export default function App() {
   const [state, setState] = React.useState<ManifestState | null>(null)
   const [fetchError, setFetchError] = React.useState<string | null>(null)
   const [panel, setPanel] = React.useState<PanelId>("sources")
+  // Pending edits, one per path (last write wins), applied in insertion order.
+  const [edits, setEdits] = React.useState<Record<string, ManifestEdit>>({})
+  const [envVars, setEnvVars] = React.useState<Record<string, boolean>>({})
+  const [saving, setSaving] = React.useState(false)
+  const [saveError, setSaveError] = React.useState<string | null>(null)
 
-  React.useEffect(() => {
+  const load = React.useCallback(() => {
     fetch("/api/manifest")
       .then((res) => res.json() as Promise<ManifestState>)
       .then(setState)
       .catch((err) => setFetchError(err instanceof Error ? err.message : String(err)))
+    fetch("/api/env-status")
+      .then((res) => res.json() as Promise<{ vars: Record<string, boolean> }>)
+      .then((body) => setEnvVars(body.vars))
+      .catch(() => {})
   }, [])
+
+  React.useEffect(load, [load])
+
+  const manifest = state?.ok ? state.manifest : null
+  const draft = React.useMemo(
+    () => (manifest ? applyEditsToJson(manifest, Object.values(edits)) : null),
+    [manifest, edits],
+  )
+
+  const onSet = React.useCallback(
+    (path: EditPath, value: ScalarValue) => {
+      setEdits((prev) => {
+        const key = pathKey(path)
+        // Editing back to the on-disk value clears the pending edit.
+        if (manifest && getAtPath(manifest, path) === value) {
+          const { [key]: _dropped, ...rest } = prev
+          return rest
+        }
+        return { ...prev, [key]: { op: "set", path, value } }
+      })
+    },
+    [manifest],
+  )
+
+  const onRemove = React.useCallback(
+    (path: EditPath) => {
+      setEdits((prev) => {
+        // Drop pending edits at or below this path; they describe what's removed.
+        const prefix = pathKey(path)
+        const rest = Object.fromEntries(
+          Object.entries(prev).filter(
+            ([k]) => k !== prefix && !k.startsWith(prefix + " "),
+          ),
+        )
+        // Only emit a remove op for keys that exist on disk.
+        if (manifest && getAtPath(manifest, path) !== undefined) {
+          rest[prefix] = { op: "remove", path }
+        }
+        return rest
+      })
+    },
+    [manifest],
+  )
+
+  const dirty = Object.keys(edits).length
+
+  const save = React.useCallback(async () => {
+    if (!state?.ok || dirty === 0) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const res = await fetch("/api/manifest", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ edits: Object.values(edits), baseMtimeMs: state.mtimeMs }),
+      })
+      const body = (await res.json()) as ManifestState & { error?: string }
+      if (res.ok && body.ok) {
+        setState(body)
+        setEdits({})
+        fetch("/api/env-status")
+          .then((r) => r.json() as Promise<{ vars: Record<string, boolean> }>)
+          .then((b) => setEnvVars(b.vars))
+          .catch(() => {})
+      } else {
+        setSaveError(body.error ?? `save failed (HTTP ${res.status})`)
+      }
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSaving(false)
+    }
+  }, [state, edits, dirty])
 
   if (fetchError) {
     return (
@@ -57,14 +148,14 @@ export default function App() {
     )
   }
 
-  if (!state.ok) {
+  if (!state.ok || !draft) {
     return (
       <Shell>
         <Alert variant="destructive">
           <AlertTriangle />
           <AlertTitle>Cannot open this capability</AlertTitle>
           <AlertDescription>
-            <p>{state.error}</p>
+            <p>{!state.ok ? state.error : "no manifest loaded"}</p>
             <p>Fix the file on disk and reload — the studio needs parseable YAML to render.</p>
           </AlertDescription>
         </Alert>
@@ -72,18 +163,40 @@ export default function App() {
     )
   }
 
-  const { manifest, issues } = state
-  const name = asString(manifest.capability) || "(unnamed capability)"
-  const version = asString(manifest.version)
+  const { issues } = state
+  const name = asString(draft.capability) || "(unnamed capability)"
+  const version = asString(draft.version)
 
   return (
     <Shell
       header={
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-lg font-semibold">{name}</h1>
-          {version && <Badge variant="secondary">v{version}</Badge>}
-          <Badge variant="outline">read-only</Badge>
-        </div>
+        <>
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-lg font-semibold">{name}</h1>
+            {version && <Badge variant="secondary">v{version}</Badge>}
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            {dirty > 0 && (
+              <Badge variant="outline">
+                {dirty} unsaved change{dirty === 1 ? "" : "s"}
+              </Badge>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={dirty === 0 || saving}
+              onClick={() => {
+                setEdits({})
+                setSaveError(null)
+              }}
+            >
+              Discard
+            </Button>
+            <Button size="sm" disabled={dirty === 0 || saving} onClick={save}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </>
       }
       nav={
         <nav className="flex flex-col gap-1">
@@ -101,6 +214,18 @@ export default function App() {
         </nav>
       }
     >
+      {saveError && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertTriangle />
+          <AlertTitle>Save failed</AlertTitle>
+          <AlertDescription>
+            <p>{saveError}</p>
+            <Button variant="outline" size="sm" onClick={() => (setSaveError(null), load())}>
+              Reload from disk
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
       {issues.length > 0 && (
         <Alert variant="destructive" className="mb-4">
           <AlertTriangle />
@@ -121,10 +246,12 @@ export default function App() {
           </AlertDescription>
         </Alert>
       )}
-      {panel === "sources" && <SourcesPanel manifest={manifest} />}
-      {panel === "skill" && <SkillPanel manifest={manifest} />}
-      {panel === "behavior" && <BehaviorPanel manifest={manifest} />}
-      {panel === "tools" && <ToolsPanel manifest={manifest} />}
+      {panel === "sources" && (
+        <SourcesPanel manifest={draft} env={envVars} onSet={onSet} onRemove={onRemove} />
+      )}
+      {panel === "skill" && <SkillPanel manifest={draft} />}
+      {panel === "behavior" && <BehaviorPanel manifest={draft} />}
+      {panel === "tools" && <ToolsPanel manifest={draft} />}
     </Shell>
   )
 }

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -85,6 +85,208 @@ describe("GET /api/manifest", () => {
     expect(body.ok).toBe(false);
     expect(body.error).toContain("cannot read");
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("PUT /api/manifest", () => {
+  /** A scratch copy of the training-coach manifest, so writes never touch the example. */
+  function exampleCopy(): string {
+    const dir = mkdtempSync(join(tmpdir(), "lathe-studio-put-"));
+    copyFileSync(join(exampleDir, "capability.yaml"), join(dir, "capability.yaml"));
+    return dir;
+  }
+
+  async function loadedMtime(h: StudioHandle): Promise<number> {
+    const body = (await (await fetch(`${h.url}/api/manifest`)).json()) as { mtimeMs: number };
+    return body.mtimeMs;
+  }
+
+  function put(h: StudioHandle, body: unknown): Promise<Response> {
+    return fetch(`${h.url}/api/manifest`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("applies path-scoped edits, changing only the targeted lines on disk", async () => {
+    const dir = exampleCopy();
+    const before = readFileSync(join(dir, "capability.yaml"), "utf8");
+    const h = await studio({ dir });
+    const res = await put(h, {
+      baseMtimeMs: await loadedMtime(h),
+      edits: [
+        { op: "set", path: ["sources", "store", "base_url"], value: "http://127.0.0.1:54321/rest/v1" },
+      ],
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      manifest: { sources: { store: { base_url: string } } };
+      issues: unknown[];
+      mtimeMs: number;
+    };
+    expect(body.ok).toBe(true);
+    expect(body.manifest.sources.store.base_url).toBe("http://127.0.0.1:54321/rest/v1");
+    expect(body.issues).toEqual([]);
+
+    const after = readFileSync(join(dir, "capability.yaml"), "utf8");
+    const changed = after.split("\n").filter((line, i) => line !== before.split("\n")[i]);
+    expect(changed).toEqual([
+      "    base_url: http://127.0.0.1:54321/rest/v1                 # local Supabase or hosted",
+    ]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("409s a stale write and leaves the file untouched", async () => {
+    const dir = exampleCopy();
+    const before = readFileSync(join(dir, "capability.yaml"), "utf8");
+    const h = await studio({ dir });
+    const res = await put(h, {
+      baseMtimeMs: (await loadedMtime(h)) - 1000,
+      edits: [{ op: "set", path: ["version"], value: "9.9.9" }],
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toContain("changed on disk");
+    expect(readFileSync(join(dir, "capability.yaml"), "utf8")).toBe(before);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("400s a bad edit (remove of a missing key) and leaves the file untouched", async () => {
+    const dir = exampleCopy();
+    const before = readFileSync(join(dir, "capability.yaml"), "utf8");
+    const h = await studio({ dir });
+    const res = await put(h, {
+      baseMtimeMs: await loadedMtime(h),
+      edits: [{ op: "remove", path: ["sources", "store", "nope"] }],
+    });
+    expect(res.status).toBe(400);
+    expect(readFileSync(join(dir, "capability.yaml"), "utf8")).toBe(before);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("400s a malformed body", async () => {
+    const dir = exampleCopy();
+    const h = await studio({ dir });
+    for (const bad of [
+      { edits: "not-an-array", baseMtimeMs: 1 },
+      { edits: [{ op: "set", path: "not-a-path", value: 1 }], baseMtimeMs: 1 },
+      { edits: [{ op: "set", path: ["a"], value: { nested: true } }], baseMtimeMs: 1 },
+      { edits: [] },
+    ]) {
+      const res = await put(h, bad);
+      expect(res.status).toBe(400);
+    }
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("GET /api/env-status", () => {
+  it("reports every referenced ${VAR} as resolved or missing, never values", async () => {
+    const h = await studio({
+      dir: exampleDir,
+      env: { STRAVA_TOKEN: "secret-token" },
+    });
+    const res = await fetch(`${h.url}/api/env-status`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { vars: Record<string, boolean> };
+    expect(body.vars).toEqual({
+      STRAVA_TOKEN: true,
+      SUPABASE_URL: false,
+      SUPABASE_KEY: false,
+    });
+    expect(JSON.stringify(body)).not.toContain("secret-token");
+  });
+});
+
+describe("POST /api/source-check", () => {
+  const env = {
+    STRAVA_TOKEN: "tok-123",
+    SUPABASE_URL: "http://db.local",
+    SUPABASE_KEY: "key-456",
+  };
+
+  function check(h: StudioHandle, body: unknown): Promise<Response> {
+    return fetch(`${h.url}/api/source-check`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("makes one GET through the http adapter and reports ok + status", async () => {
+    const calls: { url: string; auth?: string }[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({
+        url: String(input),
+        auth: (init?.headers as Record<string, string>)?.Authorization,
+      });
+      return new Response("[]", { status: 200 });
+    }) as typeof fetch;
+
+    const h = await studio({ dir: exampleDir, env, fetchImpl });
+    const res = await check(h, { source: "strava", path: "/athlete" });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as object).toEqual({ ok: true, status: 200 });
+    expect(calls).toEqual([
+      { url: "https://www.strava.com/api/v3/athlete", auth: "Bearer tok-123" },
+    ]);
+  });
+
+  it("reports a non-2xx response as ok: false with the status", async () => {
+    const fetchImpl = (async () => new Response("nope", { status: 503 })) as typeof fetch;
+    const h = await studio({ dir: exampleDir, env, fetchImpl });
+    const body = (await (await check(h, { source: "store" })).json()) as {
+      ok: boolean;
+      status: number;
+      error: string;
+    };
+    expect(body.ok).toBe(false);
+    expect(body.status).toBe(503);
+    expect(body.error).toContain("503");
+  });
+
+  it("reports a missing env var as ok: false without calling out", async () => {
+    let called = false;
+    const fetchImpl = (async () => {
+      called = true;
+      return new Response("[]", { status: 200 });
+    }) as typeof fetch;
+    const h = await studio({ dir: exampleDir, env: {}, fetchImpl });
+    const body = (await (await check(h, { source: "strava" })).json()) as {
+      ok: boolean;
+      error: string;
+    };
+    expect(body.ok).toBe(false);
+    expect(body.error).toContain("STRAVA_TOKEN");
+    expect(called).toBe(false);
+  });
+
+  it("rejects unknown sources and non-http sources", async () => {
+    const dir = tempCapability(
+      [
+        "capability: t",
+        "version: 0.0.1",
+        "sources:",
+        "  db: { type: postgres }",
+        "",
+      ].join("\n"),
+    );
+    const h = await studio({ dir });
+    const unknown = (await (await check(h, { source: "nope" })).json()) as { ok: boolean; error: string };
+    expect(unknown.ok).toBe(false);
+    expect(unknown.error).toContain("no such source");
+    const nonHttp = (await (await check(h, { source: "db" })).json()) as { ok: boolean; error: string };
+    expect(nonHttp.ok).toBe(false);
+    expect(nonHttp.error).toContain("http");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("400s any method other than GET — connection checks are read-only", async () => {
+    const h = await studio({ dir: exampleDir, env });
+    const res = await check(h, { source: "store", method: "POST" });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain("read-only");
   });
 });
 

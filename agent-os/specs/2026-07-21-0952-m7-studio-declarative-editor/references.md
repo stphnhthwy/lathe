@@ -62,6 +62,32 @@
   invalid-still-opens, parse error, missing file, API 404, static serving,
   SPA fallback, traversal guard, UI-not-built 503).
 
+### Slice 2 — sources editing (2026-07-21)
+
+- **Round-trip approach.** `yaml`'s whole-document `toString()` normalizes
+  comment columns, flow padding, and line folding — a plain parse→stringify of
+  the training-coach fixture already changes ~40 lines. So `yaml-edit.ts` uses
+  the Document API only to *locate* nodes and applies each edit by splicing
+  text at the node's byte range; untouched lines stay byte-identical by
+  construction. 20 tests, fixture: the training-coach manifest.
+- **API smoke** (tsx dev loop, PostgREST stubbed by a 5-line `node:http` 200
+  responder on `:3999`, `SUPABASE_URL`/`SUPABASE_KEY`/`STRAVA_TOKEN` set):
+  `GET /api/env-status` → all three vars `true` (booleans only);
+  `POST /api/source-check {source: store}` → `{ok: true, status: 200}`;
+  `PUT /api/manifest` setting `store.base_url` → `git diff` on the example
+  showed exactly the one intended line (alignment + trailing comment intact);
+  replaying the PUT with the old `baseMtimeMs` → 409, file untouched.
+- **UI smoke** (headless Chromium over the built bundle): edited
+  `store.base_url` and added an `x-client` header via the Sources form —
+  header showed "2 unsaved changes", Save cleared it, and `git diff` showed
+  exactly the two intended lines; "Check connection" on `store` rendered
+  `reachable · 200` against the stub; env badges rendered resolved (check
+  icon) for all three vars. No console errors.
+- `lathe check` passes on a studio-saved manifest (same `manifestSchema`).
+- Vitest: 104/104 (20 yaml-edit + 10 new route tests: PUT happy/409/400s,
+  env-status, source-check ok/non-2xx/missing-env/unknown/non-http/
+  method-guard). `npm pack --dry-run` still ships `dist/studio/`.
+
 ### Slice 1 implementation notes
 
 - The shadcn CLI's registry (`ui.shadcn.com`) was unreachable from the
