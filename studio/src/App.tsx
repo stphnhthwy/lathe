@@ -261,7 +261,7 @@ export default function App() {
           onRemove={onRemove}
         />
       )}
-      {panel === "behavior" && <BehaviorPanel manifest={draft} />}
+      {panel === "behavior" && <BehaviorPanel manifest={draft} onSet={onSet} onRemove={onRemove} />}
       {panel === "tools" && <ToolsPanel manifest={draft} />}
     </Shell>
   )

@@ -1,3 +1,4 @@
+import { AskBadge, LockedBadge } from "@/components/dial-badges"
 import { Badge } from "@/components/ui/badge"
 import {
   Card,
@@ -11,10 +12,12 @@ import { asArray, asDict, asString, type Dict } from "@/lib/manifest"
 /**
  * Tools — VIEW-ONLY in M7. A tool is either a declared pipeline (`steps`) or
  * an atomic read/write the model chains. Editing the pipeline grammar is its
- * own future milestone.
+ * own future milestone. The dial badges still apply: `ask` markers and reads
+ * of locked metrics are labeled with the same vocabulary as the other panels.
  */
 export function ToolsPanel({ manifest }: { manifest: Dict }) {
   const tools = asArray(manifest.tools).map(asDict)
+  const locked = asArray(asDict(manifest.behavior).computed_locked).map(asString)
 
   return (
     <div className="flex flex-col gap-4">
@@ -28,16 +31,17 @@ export function ToolsPanel({ manifest }: { manifest: Dict }) {
           </CardHeader>
         </Card>
       ) : (
-        tools.map((tool, i) => <ToolCard key={i} tool={tool} />)
+        tools.map((tool, i) => <ToolCard key={i} tool={tool} locked={locked} />)
       )}
     </div>
   )
 }
 
-function ToolCard({ tool }: { tool: Dict }) {
+function ToolCard({ tool, locked }: { tool: Dict; locked: string[] }) {
   const steps = asArray(tool.steps)
   const isPipeline = steps.length > 0
   const askCount = countAsk(tool)
+  const readsLocked = asArray(tool.reads).map(asString).some((r) => locked.includes(r))
 
   return (
     <Card>
@@ -53,11 +57,8 @@ function ToolCard({ tool }: { tool: Dict }) {
           )}
           {tool.readonly === true && <Badge variant="outline">readonly</Badge>}
           {tool.confirm === true && <Badge variant="outline">confirm</Badge>}
-          {askCount > 0 && (
-            <Badge variant="outline">
-              ask ×{askCount}
-            </Badge>
-          )}
+          {askCount > 0 && <AskBadge count={askCount} />}
+          {readsLocked && <LockedBadge />}
         </CardTitle>
         {typeof tool.description === "string" && (
           <CardDescription>{tool.description}</CardDescription>

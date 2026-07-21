@@ -283,6 +283,67 @@ describe("applyEdits — sequences", () => {
   });
 });
 
+describe("applyEdits — behavior-panel patterns", () => {
+  it("removes a block-map key whose value spans multiple lines (whole entity)", () => {
+    const after = edit(fixture, [{ op: "remove", path: ["schema", "plan_week"] }]);
+    const { removed, added } = lineDiff(fixture, after);
+    expect(removed).toEqual([
+      "  plan_week:",
+      "    week_start:   date",
+      "    phase:        enum[base, build, peak, taper]",
+      "    target_load:  int",
+    ]);
+    expect(added).toEqual([]);
+    expect(parseYaml(after).schema.plan_week).toBeUndefined();
+    expect(parseYaml(after).schema.session).toBeDefined();
+  });
+
+  it("creates behavior.computed_locked from scratch as nested block lines", () => {
+    const text = "capability: t\nversion: 0.0.1\n";
+    const after = edit(text, [
+      { op: "set", path: ["behavior", "computed_locked", 0], value: "load" },
+    ]);
+    expect(after).toBe(
+      "capability: t\nversion: 0.0.1\nbehavior:\n  computed_locked:\n    - load\n",
+    );
+  });
+
+  it("adds a window key into a metric's flow map, only that line changing", () => {
+    const after = edit(fixture, [
+      { op: "set", path: ["metrics", "acwr", "window"], value: "7d" },
+    ]);
+    const { removed, added } = lineDiff(fixture, after);
+    expect(removed).toEqual([
+      '  acwr:         { formula: "rolling_load(7d) / rolling_load(28d)" }   # ramp signal',
+    ]);
+    expect(added).toEqual([
+      '  acwr:         { formula: "rolling_load(7d) / rolling_load(28d)", window: 7d }   # ramp signal',
+    ]);
+  });
+
+  it("keeps an enum[...] type string plain in block context", () => {
+    const after = edit(fixture, [
+      { op: "set", path: ["schema", "plan_week", "phase"], value: "enum[base, build]" },
+    ]);
+    const { added } = lineDiff(fixture, after);
+    expect(added).toEqual(["    phase:        enum[base, build]"]);
+    expect(parseYaml(after).schema.plan_week.phase).toBe("enum[base, build]");
+  });
+
+  it("toggles computed_locked entries in the flow seq", () => {
+    const off = edit(fixture, [
+      { op: "remove", path: ["behavior", "computed_locked", 1] },
+    ]);
+    expect(lineDiff(fixture, off).added).toEqual([
+      "  computed_locked: [load, acwr]   # computed in code, returned frozen",
+    ]);
+    const on = edit(off, [
+      { op: "set", path: ["behavior", "computed_locked", 2], value: "rolling_load" },
+    ]);
+    expect(parseYaml(on).behavior.computed_locked).toEqual(["load", "acwr", "rolling_load"]);
+  });
+});
+
 describe("applyEdits — errors and integrity", () => {
   it("throws when removing a key that does not exist", () => {
     expect(() =>

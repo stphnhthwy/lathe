@@ -79,7 +79,7 @@ standalone code comes last.
   and no auth/per-request identity (single-tenant env credentials — "live first,
   auth next"). Spec: `agent-os/specs/2026-07-17-2332-m6-eject-http/`.
 
-### M7 — Studio: declarative capability editor (in progress — slices 1–3 of 4 done)
+### M7 — Studio: declarative capability editor ✅ (all 4 slices shipped 2026-07-21)
 - `lathe studio [path]` — a local web UI over one capability directory,
   Prisma-Studio-style: structured forms for **Sources → Skill → Behavior**
   (that priority order), tools view-only, nothing generative — fields only,

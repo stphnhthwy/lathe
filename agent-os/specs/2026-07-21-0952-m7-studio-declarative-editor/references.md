@@ -114,6 +114,37 @@
 - Vitest: 116/116. Checkbox/Textarea vendored from shadcn base-ui sources
   (registry still unreachable), same as Input/Label in slice 2.
 
+### Slice 4 — behavior editing (2026-07-21)
+
+- No new edit machinery needed — the slice rides entirely on slices 2–3's ops.
+  5 new yaml-edit tests pin the usage patterns: multi-line block-pair removal
+  (whole entity), nested block creation of `behavior.computed_locked` from
+  scratch, flow-map key add on a metric line (`window` onto `acwr`),
+  `enum[...]` staying a plain scalar in block context, and flow-seq
+  computed_locked toggling.
+- Behavior panel: schema entity cards with per-field dedicated inputs
+  (`derived:` expression, `enum[...]` value list, plain type string —
+  structural only), add/remove fields and entities (last-field removal takes
+  the whole entity; new entities start as `id: string`); metrics rows with
+  window/formula inputs and add/remove (clearing a window removes the key);
+  locked compute as a checkbox multi-select over derived fields + metrics
+  (+ any existing locked entries, so stale ones can be turned off).
+- Badge pass: `locked` / `derived` (Σ) / `ask` (?) unified as shared
+  components (`studio/src/components/dial-badges.tsx` — composition of
+  shadcn Badge, not a new primitive) and used across Behavior and Tools;
+  Tools now also badges `locked` on tools whose `reads` reference a locked
+  metric (`weekly_checkin`).
+- **UI smoke** (headless Chromium, built bundle): unchecked `rolling_load`,
+  set its window 14d→21d, extended the `phase` enum, added `notes: string`
+  to `session` → one save; `git diff` showed exactly those four lines,
+  alignment and trailing comments intact. `lathe check` passes on the saved
+  file. No console errors.
+- **Consumer install smoke** (M7 packaging verification): `npm pack` →
+  install the tarball into a scratch project → `npx lathe studio cap
+  --no-open` boots, `GET /api/manifest` returns the manifest and `GET /`
+  serves the shipped UI (200).
+- Vitest: 121/121.
+
 ### Slice 1 implementation notes
 
 - The shadcn CLI's registry (`ui.shadcn.com`) was unreachable from the
