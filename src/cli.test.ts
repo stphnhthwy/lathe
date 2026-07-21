@@ -38,6 +38,13 @@ describe("lathe CLI", () => {
     const r = await runCli(["--help"]);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain("check");
+    expect(r.stdout).toContain("studio");
+  });
+
+  it("studio rejects an invalid port with exit 1", async () => {
+    const r = await runCli(["studio", "--no-open", "--port", "not-a-port"]);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("invalid port");
   });
 
   it("check on the example exits 0 and reports valid", async () => {

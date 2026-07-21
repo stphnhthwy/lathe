@@ -43,4 +43,36 @@
 
 ## Smoke traces
 
-*(empty — filled in per slice during implementation, matching M4–M6 practice)*
+### Slice 1 — read-only studio (2026-07-21)
+
+- Built CLI (`node dist/cli.js studio examples/training-coach --no-open --port
+  4989`): `GET /api/manifest` returned the training-coach manifest with
+  `issues: []` and an mtime; `GET /` served the built UI (`dist/studio/ui`).
+- Headless-browser pass over all four panels (Playwright screenshots):
+  **Sources** shows strava/store cards with type badges, auth kind + token
+  refs, headers, and `${VAR}` environment chips; **Skill** shows identity,
+  references, emit; **Behavior** shows the locked-compute badges
+  (`load`/`rolling_load`/`acwr`), both schema entities with the `derived` +
+  `locked` badge on `load`, and the metrics table; **Tools** shows
+  `import_recent` as `pipeline · 2 steps` with `ask ×1`, and the atomic tools
+  with `readonly`/`confirm` badges. No console errors.
+- `npm pack --dry-run` ships `dist/studio/{api,server}.js` + `dist/studio/ui/`
+  (index.html + hashed assets) inside the existing `files: ["dist"]`.
+- Vitest: 74/74 including the 9 new studio server tests (valid manifest,
+  invalid-still-opens, parse error, missing file, API 404, static serving,
+  SPA fallback, traversal guard, UI-not-built 503).
+
+### Slice 1 implementation notes
+
+- The shadcn CLI's registry (`ui.shadcn.com`) was unreachable from the
+  implementation environment (network policy), so the equivalent output was
+  assembled from the shadcn-ui/ui sources directly: the `vite-app` template
+  (`apps/v4/public/r/templates/vite-app.tar.gz`), the Base UI component
+  sources (`apps/v4/registry/bases/base/ui/*.tsx`, imports rewritten to
+  `@/lib/utils`), the nova preset stylesheet
+  (`apps/v4/registry/styles/style-nova.css`, vendored as
+  `studio/src/style-nova.css`), and the v4 neutral oklch theme variables
+  (`apps/v4/app/globals.css`). `@import "shadcn/tailwind.css"` comes from the
+  `shadcn` npm package (a devDependency), which exports it. A
+  `components.json` (style nova, base `base`, neutral) is in place so
+  `npx shadcn add` works normally where the registry is reachable.
