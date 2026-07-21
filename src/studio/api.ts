@@ -1,4 +1,5 @@
-import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { manifestSchema } from "../manifest/schema.js";
 import type { ManifestIssue } from "../manifest/load.js";
@@ -19,8 +20,10 @@ export type ManifestState =
       /** The raw parsed YAML document (not the zod-narrowed type — may be invalid). */
       manifest: Record<string, unknown>;
       issues: ManifestIssue[];
-      /** File mtime at read, for stale-write detection when saves arrive (Slice 2). */
+      /** File mtime at read, for stale-write detection on saves. */
       mtimeMs: number;
+      /** Per-`references[]` entry: does the file exist on disk (relative to the manifest)? */
+      referenceStatus: Record<string, boolean>;
     }
   | { ok: false; error: string };
 
@@ -55,7 +58,17 @@ export function readManifestState(manifestPath: string): ManifestState {
         message: issue.message,
       }));
 
-  return { ok: true, manifest: raw as Record<string, unknown>, issues, mtimeMs };
+  const manifest = raw as Record<string, unknown>;
+  const referenceStatus: Record<string, boolean> = {};
+  if (Array.isArray(manifest.references)) {
+    for (const ref of manifest.references) {
+      if (typeof ref === "string") {
+        referenceStatus[ref] = existsSync(resolve(dirname(manifestPath), ref));
+      }
+    }
+  }
+
+  return { ok: true, manifest, issues, mtimeMs, referenceStatus };
 }
 
 // ── PUT /api/manifest ────────────────────────────────────────────────────────

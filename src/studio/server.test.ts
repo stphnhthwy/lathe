@@ -46,6 +46,26 @@ describe("GET /api/manifest", () => {
     expect(typeof body.mtimeMs).toBe("number");
   });
 
+  it("reports on-disk existence per references[] entry", async () => {
+    const dir = tempCapability(
+      [
+        "capability: t",
+        "version: 0.0.1",
+        "references:",
+        "  - ./exists.md",
+        "  - ./missing.md",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(join(dir, "exists.md"), "# here\n");
+    const h = await studio({ dir });
+    const body = (await (await fetch(`${h.url}/api/manifest`)).json()) as {
+      referenceStatus: Record<string, boolean>;
+    };
+    expect(body.referenceStatus).toEqual({ "./exists.md": true, "./missing.md": false });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it("still returns the raw manifest alongside issues when validation fails (invalid still opens)", async () => {
     const dir = tempCapability(
       // missing required `version`; tool declares neither steps nor reads/writes

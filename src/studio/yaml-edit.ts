@@ -8,6 +8,7 @@ import {
   type Document,
   type Pair,
   type YAMLMap,
+  type YAMLSeq,
 } from "yaml";
 
 /**
@@ -102,7 +103,7 @@ function addAt(text: string, doc: Document, path: EditPath, value: ScalarValue):
       throw new Error(`cannot set ${pathLabel(path)}: ${pathLabel(path.slice(0, depth))} is not a collection`);
     }
     if (isSeq(node)) {
-      throw new Error(`cannot add ${pathLabel(path)}: adding into a sequence is not supported`);
+      return addToSeq(text, node, rest, value, pathLabel(path));
     }
     if (isMap(node)) {
       return addToMap(text, node, rest, value);
@@ -158,22 +159,88 @@ function addToMap(text: string, map: YAMLMap, rest: EditPath, value: ScalarValue
   return text.slice(0, insertAt) + prefix + lines.join("\n") + "\n" + text.slice(insertAt);
 }
 
-/** `[a, b, c] → "a:" / "  b:" / "    c: value"` — nested block lines. */
+/** Append to a sequence — only `index === length` (the next slot) is addable. */
+function addToSeq(
+  text: string,
+  seq: YAMLSeq,
+  rest: EditPath,
+  value: ScalarValue,
+  label: string,
+): string {
+  const index = Number(rest[0]);
+  if (!Number.isInteger(index) || index !== seq.items.length) {
+    throw new Error(
+      `cannot set ${label}: sequence index ${String(rest[0])} is out of range (length ${seq.items.length})`,
+    );
+  }
+  if (!seq.range) throw new Error(`cannot add ${label}: sequence has no range`);
+
+  const content =
+    rest.length === 1 ? formatScalar(value, undefined, seq.flow ?? false) : flowValue(rest.slice(1), value);
+
+  if (seq.flow) {
+    const [start, end] = seq.range; // [start, end) covers the brackets
+    if (seq.items.length === 0) {
+      return text.slice(0, start) + `[${content}]` + text.slice(end);
+    }
+    const lastEnd = Math.max(...seq.items.map((item) => nodeRange(item)?.[1] ?? start));
+    return text.slice(0, lastEnd) + `, ${content}` + text.slice(lastEnd);
+  }
+
+  // Block seq: replicate the `  - ` prefix of the first item on a new line.
+  const firstRange = nodeRange(seq.items[0]);
+  if (!firstRange) throw new Error(`cannot add ${label}: sequence has no items to align with`);
+  const lineStart = text.lastIndexOf("\n", firstRange[0] - 1) + 1;
+  const prefix = text.slice(lineStart, firstRange[0]);
+  let insertAt = seq.range[1];
+  if (insertAt > 0 && text[insertAt - 1] !== "\n") {
+    const nl = text.indexOf("\n", insertAt);
+    insertAt = nl === -1 ? text.length : nl + 1;
+  }
+  return text.slice(0, insertAt) + prefix + content + "\n" + text.slice(insertAt);
+}
+
+/**
+ * Nested block lines for new keys: `[a, b, c] → "a:" / "  b:" / "    c: value"`.
+ * A numeric key creates a sequence — `[refs, 0] → "refs:" / "  - value"` —
+ * and must be 0, since only a not-yet-existing sequence is created here.
+ */
 function blockEntry(indent: string, keys: EditPath, value: ScalarValue): string[] {
   const lines: string[] = [];
   let ind = indent;
-  for (let i = 0; i < keys.length - 1; i++) {
-    lines.push(`${ind}${formatKey(keys[i])}:`);
-    ind += "  ";
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (typeof key === "number") {
+      if (key !== 0) {
+        throw new Error(`cannot create a sequence at index ${key}: only index 0 (out of range)`);
+      }
+      const restKeys = keys.slice(i + 1);
+      const content =
+        restKeys.length === 0 ? formatScalar(value, undefined, false) : flowValue(restKeys, value);
+      lines.push(`${ind}- ${content}`);
+      return lines;
+    }
+    if (i === keys.length - 1) {
+      lines.push(`${ind}${formatKey(key)}: ${formatScalar(value, undefined, false)}`);
+    } else {
+      lines.push(`${ind}${formatKey(key)}:`);
+      ind += "  ";
+    }
   }
-  lines.push(`${ind}${formatKey(keys[keys.length - 1])}: ${formatScalar(value, undefined, false)}`);
   return lines;
 }
 
-/** `[a, b] → "{ a: { b: value } }"` — inline nesting for flow contexts. */
+/** Inline nesting for flow contexts: `[a, b] → "{ a: { b: value } }"`; 0 → `[…]`. */
 function flowValue(keys: EditPath, value: ScalarValue): string {
   if (keys.length === 0) return formatScalar(value, undefined, true);
-  return `{ ${formatKey(keys[0])}: ${flowValue(keys.slice(1), value)} }`;
+  const key = keys[0];
+  if (typeof key === "number") {
+    if (key !== 0) {
+      throw new Error(`cannot create a sequence at index ${key}: only index 0 (out of range)`);
+    }
+    return `[${flowValue(keys.slice(1), value)}]`;
+  }
+  return `{ ${formatKey(key)}: ${flowValue(keys.slice(1), value)} }`;
 }
 
 // ── remove ───────────────────────────────────────────────────────────────────
@@ -182,8 +249,17 @@ function removeAt(text: string, doc: Document, path: EditPath): string {
   const parentPath = path.slice(0, -1);
   const key = path[path.length - 1];
   const parent = parentPath.length === 0 ? doc.contents : doc.getIn(parentPath, true);
+  if (isSeq(parent)) {
+    const index = Number(key);
+    if (!Number.isInteger(index) || parent.items[index] === undefined) {
+      throw new Error(`cannot remove ${pathLabel(path)}: not found`);
+    }
+    return parent.flow
+      ? removeFromFlowSeq(text, parent, index)
+      : removeBlockSeqItem(text, parent, index);
+  }
   if (!isMap(parent)) {
-    throw new Error(`cannot remove ${pathLabel(path)}: parent is not a mapping`);
+    throw new Error(`cannot remove ${pathLabel(path)}: parent is not a mapping or sequence`);
   }
   const index = parent.items.findIndex((p) => keyMatches(p, key));
   if (index === -1) {
@@ -192,6 +268,47 @@ function removeAt(text: string, doc: Document, path: EditPath): string {
   return parent.flow
     ? removeFromFlowMap(text, parent, index)
     : removeBlockPair(text, parent.items[index]);
+}
+
+/** Remove a block-seq item: its full line(s), `- ` marker and comment included. */
+function removeBlockSeqItem(text: string, seq: YAMLSeq, index: number): string {
+  const range = nodeRange(seq.items[index]);
+  if (!range || !seq.range) throw new Error("cannot remove: sequence item has no range");
+  if (seq.items.length === 1) {
+    // Removing the only item would leave the parent key with an implicit null;
+    // collapse to an explicit empty flow seq instead.
+    const [start, end] = seq.range;
+    const trailing = end > 0 && text[end - 1] === "\n" ? "\n" : "";
+    return text.slice(0, start) + "[]" + trailing + text.slice(end);
+  }
+  const start = text.lastIndexOf("\n", range[0] - 1) + 1;
+  let end = range[2] ?? range[1];
+  if (end > 0 && text[end - 1] !== "\n") {
+    const nl = text.indexOf("\n", end);
+    end = nl === -1 ? text.length : nl + 1;
+  }
+  return text.slice(0, start) + text.slice(end);
+}
+
+function removeFromFlowSeq(text: string, seq: YAMLSeq, index: number): string {
+  if (!seq.range) throw new Error("cannot remove: flow sequence has no range");
+  if (seq.items.length === 1) {
+    return text.slice(0, seq.range[0]) + "[]" + text.slice(seq.range[1]);
+  }
+  const range = nodeRange(seq.items[index]);
+  if (!range) throw new Error("cannot remove: sequence item has no range");
+  let [start, end] = range;
+  if (index > 0) {
+    while (start > 0 && (text[start - 1] === " " || text[start - 1] === "\n")) start--;
+    if (text[start - 1] === ",") start--;
+  } else {
+    while (text[end] === " ") end++;
+    if (text[end] === ",") {
+      end++;
+      while (text[end] === " ") end++;
+    }
+  }
+  return text.slice(0, start) + text.slice(end);
 }
 
 /** Remove a block-map pair: its full line(s), trailing comment included. */

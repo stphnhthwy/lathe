@@ -88,6 +88,32 @@
   env-status, source-check ok/non-2xx/missing-env/unknown/non-http/
   method-guard). `npm pack --dry-run` still ships `dist/studio/`.
 
+### Slice 3 — skill editing (2026-07-21)
+
+- **Sequence edits.** References and emit needed the seq ops slice 2 deferred:
+  `yaml-edit.ts` gained set-item, append (`index === length`), remove-item
+  (block and flow, comma handling both ends), and create-a-seq-from-scratch
+  (`references:` + `  - value` block lines; last-item removal collapses to
+  `[]`). 11 new tests on the fixture's `references`/`emit`.
+- **Edit-buffer ordering.** The client buffer changed from path-keyed map to
+  ordered array: sequence indexes only mean anything relative to the state
+  each edit saw, so client and server must apply the identical op list in
+  order. Merging is allowed only for consecutive sets on the same path
+  (keystrokes); removing a just-added value pops the pending set instead of
+  emitting a remove.
+- `GET /api/manifest` gains `referenceStatus` — per-`references[]` on-disk
+  existence, resolved relative to the manifest (tested with an exists/missing
+  pair fixture).
+- **UI smoke** (headless Chromium, built bundle): edited `version`, unchecked
+  `mcp`, added `./README.md` reference → save; `./methodology.pdf` (really
+  absent from the example) badged **missing**, `./README.md` badged **on
+  disk**, emit showed `skill` only. Then re-checked `mcp` and removed the
+  added reference → save; net `git diff` after both saves was exactly the one
+  line that stayed edited (`version`), proving flow-seq toggle and block-seq
+  append/remove round-trip diff-clean. No console errors.
+- Vitest: 116/116. Checkbox/Textarea vendored from shadcn base-ui sources
+  (registry still unreachable), same as Input/Label in slice 2.
+
 ### Slice 1 implementation notes
 
 - The shadcn CLI's registry (`ui.shadcn.com`) was unreachable from the

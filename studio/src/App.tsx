@@ -34,8 +34,9 @@ export default function App() {
   const [state, setState] = React.useState<ManifestState | null>(null)
   const [fetchError, setFetchError] = React.useState<string | null>(null)
   const [panel, setPanel] = React.useState<PanelId>("sources")
-  // Pending edits, one per path (last write wins), applied in insertion order.
-  const [edits, setEdits] = React.useState<Record<string, ManifestEdit>>({})
+  // Pending edits in the order they happened. Order is the contract: sequence
+  // indexes mean "at the state this edit saw", both here and on the server.
+  const [edits, setEdits] = React.useState<ManifestEdit[]>([])
   const [envVars, setEnvVars] = React.useState<Record<string, boolean>>({})
   const [saving, setSaving] = React.useState(false)
   const [saveError, setSaveError] = React.useState<string | null>(null)
@@ -55,20 +56,23 @@ export default function App() {
 
   const manifest = state?.ok ? state.manifest : null
   const draft = React.useMemo(
-    () => (manifest ? applyEditsToJson(manifest, Object.values(edits)) : null),
+    () => (manifest ? applyEditsToJson(manifest, edits) : null),
     [manifest, edits],
   )
 
   const onSet = React.useCallback(
     (path: EditPath, value: ScalarValue) => {
       setEdits((prev) => {
+        if (!manifest) return prev
         const key = pathKey(path)
-        // Editing back to the on-disk value clears the pending edit.
-        if (manifest && getAtPath(manifest, path) === value) {
-          const { [key]: _dropped, ...rest } = prev
-          return rest
-        }
-        return { ...prev, [key]: { op: "set", path, value } }
+        const last = prev[prev.length - 1]
+        // Consecutive sets on the same path merge (keystrokes), and merging is
+        // the only reordering ever allowed — anything else would change what
+        // sequence indexes in later edits refer to.
+        const base = last?.op === "set" && pathKey(last.path) === key ? prev.slice(0, -1) : prev
+        // Typing back to the value the buffer already produces clears the edit.
+        if (getAtPath(applyEditsToJson(manifest, base), path) === value) return base
+        return [...base, { op: "set", path, value }]
       })
     },
     [manifest],
@@ -77,24 +81,24 @@ export default function App() {
   const onRemove = React.useCallback(
     (path: EditPath) => {
       setEdits((prev) => {
-        // Drop pending edits at or below this path; they describe what's removed.
-        const prefix = pathKey(path)
-        const rest = Object.fromEntries(
-          Object.entries(prev).filter(
-            ([k]) => k !== prefix && !k.startsWith(prefix + " "),
-          ),
-        )
-        // Only emit a remove op for keys that exist on disk.
-        if (manifest && getAtPath(manifest, path) !== undefined) {
-          rest[prefix] = { op: "remove", path }
+        if (!manifest) return prev
+        const key = pathKey(path)
+        const last = prev[prev.length - 1]
+        // Removing something the last edit just added undoes that edit instead.
+        if (last?.op === "set" && pathKey(last.path) === key) {
+          const base = prev.slice(0, -1)
+          if (getAtPath(applyEditsToJson(manifest, base), path) === undefined) return base
+          return [...base, { op: "remove", path }]
         }
-        return rest
+        // Only remove what currently exists in the draft.
+        if (getAtPath(applyEditsToJson(manifest, prev), path) === undefined) return prev
+        return [...prev, { op: "remove", path }]
       })
     },
     [manifest],
   )
 
-  const dirty = Object.keys(edits).length
+  const dirty = edits.length
 
   const save = React.useCallback(async () => {
     if (!state?.ok || dirty === 0) return
@@ -104,12 +108,12 @@ export default function App() {
       const res = await fetch("/api/manifest", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ edits: Object.values(edits), baseMtimeMs: state.mtimeMs }),
+        body: JSON.stringify({ edits, baseMtimeMs: state.mtimeMs }),
       })
       const body = (await res.json()) as ManifestState & { error?: string }
       if (res.ok && body.ok) {
         setState(body)
-        setEdits({})
+        setEdits([])
         fetch("/api/env-status")
           .then((r) => r.json() as Promise<{ vars: Record<string, boolean> }>)
           .then((b) => setEnvVars(b.vars))
@@ -186,7 +190,7 @@ export default function App() {
               size="sm"
               disabled={dirty === 0 || saving}
               onClick={() => {
-                setEdits({})
+                setEdits([])
                 setSaveError(null)
               }}
             >
@@ -249,7 +253,14 @@ export default function App() {
       {panel === "sources" && (
         <SourcesPanel manifest={draft} env={envVars} onSet={onSet} onRemove={onRemove} />
       )}
-      {panel === "skill" && <SkillPanel manifest={draft} />}
+      {panel === "skill" && (
+        <SkillPanel
+          manifest={draft}
+          referenceStatus={state.referenceStatus}
+          onSet={onSet}
+          onRemove={onRemove}
+        />
+      )}
       {panel === "behavior" && <BehaviorPanel manifest={draft} />}
       {panel === "tools" && <ToolsPanel manifest={draft} />}
     </Shell>

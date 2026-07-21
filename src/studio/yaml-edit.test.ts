@@ -192,6 +192,97 @@ describe("applyEdits — remove", () => {
   });
 });
 
+describe("applyEdits — sequences", () => {
+  it("replaces a block-seq item touching only its line, trailing comment intact", () => {
+    const after = edit(fixture, [
+      { op: "set", path: ["references", 0], value: "./coaching.md" },
+    ]);
+    const { removed, added } = lineDiff(fixture, after);
+    expect(removed).toEqual([
+      "  - ./methodology.pdf        # the 50k periodization approach the plan must follow",
+    ]);
+    expect(added).toEqual([
+      "  - ./coaching.md        # the 50k periodization approach the plan must follow",
+    ]);
+  });
+
+  it("replaces a flow-seq item in place", () => {
+    const after = edit(fixture, [{ op: "set", path: ["emit", 1], value: "skill" }]);
+    const { removed, added } = lineDiff(fixture, after);
+    expect(removed).toEqual(["emit: [skill, mcp]"]);
+    expect(added).toEqual(["emit: [skill, skill]"]);
+  });
+
+  it("appends to a block seq when the index equals its length", () => {
+    const after = edit(fixture, [
+      { op: "set", path: ["references", 1], value: "./drills.md" },
+    ]);
+    const { removed, added } = lineDiff(fixture, after);
+    expect(removed).toEqual([]);
+    expect(added).toEqual(["  - ./drills.md"]);
+    expect(parseYaml(after).references).toEqual(["./methodology.pdf", "./drills.md"]);
+  });
+
+  it("appends to a flow seq when the index equals its length", () => {
+    const after = edit(fixture, [{ op: "set", path: ["emit", 2], value: "skill" }]);
+    const { removed, added } = lineDiff(fixture, after);
+    expect(removed).toEqual(["emit: [skill, mcp]"]);
+    expect(added).toEqual(["emit: [skill, mcp, skill]"]);
+  });
+
+  it("creates a missing seq as block lines when the path has a 0 index", () => {
+    const text = "capability: t\nversion: 0.0.1\n";
+    const after = edit(text, [{ op: "set", path: ["references", 0], value: "./a.md" }]);
+    expect(after).toBe("capability: t\nversion: 0.0.1\nreferences:\n  - ./a.md\n");
+  });
+
+  it("removes a middle block-seq item and its whole line", () => {
+    const base = edit(fixture, [{ op: "set", path: ["references", 1], value: "./drills.md" }]);
+    const after = edit(base, [{ op: "remove", path: ["references", 0] }]);
+    const { removed, added } = lineDiff(base, after);
+    expect(removed).toEqual([
+      "  - ./methodology.pdf        # the 50k periodization approach the plan must follow",
+    ]);
+    expect(added).toEqual([]);
+    expect(parseYaml(after).references).toEqual(["./drills.md"]);
+  });
+
+  it("collapses a block seq to [] when its only item is removed", () => {
+    const after = edit(fixture, [{ op: "remove", path: ["references", 0] }]);
+    const { removed, added } = lineDiff(fixture, after);
+    expect(removed).toEqual([
+      "  - ./methodology.pdf        # the 50k periodization approach the plan must follow",
+    ]);
+    expect(added).toEqual(["  []"]);
+    expect(parseYaml(after).references).toEqual([]);
+  });
+
+  it("removes flow-seq items with comma handling at both ends", () => {
+    const first = edit(fixture, [{ op: "remove", path: ["emit", 0] }]);
+    expect(lineDiff(fixture, first).added).toEqual(["emit: [mcp]"]);
+    const last = edit(fixture, [{ op: "remove", path: ["emit", 1] }]);
+    expect(lineDiff(fixture, last).added).toEqual(["emit: [skill]"]);
+  });
+
+  it("collapses a flow seq to [] when its only item is removed", () => {
+    const text = "emit: [skill]\n";
+    const after = edit(text, [{ op: "remove", path: ["emit", 0] }]);
+    expect(after).toBe("emit: []\n");
+  });
+
+  it("throws on an out-of-range append index", () => {
+    expect(() =>
+      edit(fixture, [{ op: "set", path: ["references", 5], value: "./x.md" }]),
+    ).toThrow(/out of range/);
+  });
+
+  it("throws when removing a seq index that does not exist", () => {
+    expect(() => edit(fixture, [{ op: "remove", path: ["references", 3] }])).toThrow(
+      /not found/,
+    );
+  });
+});
+
 describe("applyEdits — errors and integrity", () => {
   it("throws when removing a key that does not exist", () => {
     expect(() =>
